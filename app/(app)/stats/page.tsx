@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import FrequencyChart from "@/components/stats/FrequencyChart";
 import KappaDisplay from "@/components/stats/KappaDisplay";
+import { parseResponseJson } from "@/lib/http";
 import { fleissKappa } from "@/lib/kappa";
 import { getActiveProjectId, setActiveProjectId, withProjectQuery } from "@/lib/projectClient";
 import { Annotation } from "@/lib/types";
@@ -14,24 +15,24 @@ export default function StatsPage() {
   useEffect(() => {
     const preferredProjectId = getActiveProjectId();
 
-    fetch(withProjectQuery("/api/projects", preferredProjectId))
-      .then((response) => response.json())
-      .then((projectData) => {
-        const resolvedProjectId = (projectData as { currentProjectId?: string }).currentProjectId ?? null;
+    (async () => {
+      try {
+        const projectResponse = await fetch(withProjectQuery("/api/projects", preferredProjectId));
+        const projectData = await parseResponseJson<{ currentProjectId?: string }>(projectResponse, {});
+
+        const resolvedProjectId = projectData.currentProjectId ?? null;
         setProjectId(resolvedProjectId);
         if (resolvedProjectId) {
           setActiveProjectId(resolvedProjectId);
         }
 
-        return fetch(withProjectQuery("/api/annotate?docId=all", resolvedProjectId));
-      })
-      .then((response) => response.json())
-      .then((data) => {
-        setAnnotations((data.annotations ?? []) as Annotation[]);
-      })
-      .catch(() => {
+        const annotationsResponse = await fetch(withProjectQuery("/api/annotate?docId=all", resolvedProjectId));
+        const data = await parseResponseJson<{ annotations?: Annotation[] }>(annotationsResponse, {});
+        setAnnotations(data.annotations ?? []);
+      } catch {
         setAnnotations([]);
-      });
+      }
+    })();
   }, []);
 
   const kappa = useMemo(() => fleissKappa(annotations), [annotations]);

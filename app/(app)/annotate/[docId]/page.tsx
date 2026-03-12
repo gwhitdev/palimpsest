@@ -6,6 +6,7 @@ import AnnotationList from "@/components/annotation/AnnotationList";
 import SelectionPopup from "@/components/annotation/SelectionPopup";
 import TechniquePanel from "@/components/annotation/TechniquePanel";
 import TextAnnotator from "@/components/annotation/TextAnnotator";
+import { parseResponseJson } from "@/lib/http";
 import { getActiveProjectId, setActiveProjectId, withProjectQuery } from "@/lib/projectClient";
 import { createClient } from "@/lib/supabase/client";
 import { Annotation, Document } from "@/lib/types";
@@ -35,24 +36,25 @@ export default function AnnotatePage() {
     const preferredProjectId = queryProjectId || getActiveProjectId();
     const url = withProjectQuery("/api/projects", preferredProjectId);
 
-    fetch(url)
-      .then((response) => response.json().then((payload) => ({ ok: response.ok, payload })))
-      .then(({ ok, payload }) => {
-        if (!ok) {
-          throw new Error((payload as { error?: string }).error ?? "Unable to resolve project context.");
+    (async () => {
+      try {
+        const response = await fetch(url);
+        const payload = await parseResponseJson<{ error?: string; currentProjectId?: string }>(response, {});
+
+        if (!response.ok) {
+          throw new Error(payload.error ?? "Unable to resolve project context.");
         }
 
-        const nextProjectId = (payload as { currentProjectId?: string }).currentProjectId;
-        if (!nextProjectId) {
+        if (!payload.currentProjectId) {
           throw new Error("No active project found.");
         }
 
-        setProjectId(nextProjectId);
-        setActiveProjectId(nextProjectId);
-      })
-      .catch((err) => {
+        setProjectId(payload.currentProjectId);
+        setActiveProjectId(payload.currentProjectId);
+      } catch (err) {
         setError(err instanceof Error ? err.message : "Unable to resolve project context.");
-      });
+      }
+    })();
   }, []);
 
   useEffect(() => {
@@ -74,14 +76,20 @@ export default function AnnotatePage() {
         setDocument((data as Document | null) ?? null);
       });
 
-    fetch(withProjectQuery(`/api/annotate?docId=${docId}`, projectId))
-      .then((response) => response.json())
-      .then((data) => {
-        setAnnotations((data.annotations ?? []) as Annotation[]);
-      })
-      .catch((err) => {
+    (async () => {
+      try {
+        const response = await fetch(withProjectQuery(`/api/annotate?docId=${docId}`, projectId));
+        const data = await parseResponseJson<{ annotations?: Annotation[]; error?: string }>(response, {});
+
+        if (!response.ok) {
+          throw new Error(data.error ?? "Unable to load annotations.");
+        }
+
+        setAnnotations(data.annotations ?? []);
+      } catch (err) {
         setError(err instanceof Error ? err.message : "Unable to load annotations.");
-      });
+      }
+    })();
 
     supabase.auth.getUser().then(async ({ data }) => {
       const user = data.user;

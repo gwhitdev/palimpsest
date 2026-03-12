@@ -3,6 +3,7 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
+import { parseResponseJson } from "@/lib/http";
 import { setActiveProjectId, withProjectQuery } from "@/lib/projectClient";
 import { createClient } from "@/lib/supabase/client";
 import { Coder, Document, DocumentWithAssignments } from "@/lib/types";
@@ -128,7 +129,7 @@ export default function ProjectDashboardPage() {
       const projectResponse = await fetch(withProjectQuery("/api/projects", routeProjectId), {
         cache: "no-store",
       });
-      const projectJson = (await projectResponse.json()) as ProjectApiResponse;
+      const projectJson = await parseResponseJson<ProjectApiResponse>(projectResponse, {});
 
       if (!projectResponse.ok) {
         throw new Error(projectJson.error ?? "Unable to load project context.");
@@ -175,9 +176,9 @@ export default function ProjectDashboardPage() {
         fetch(withProjectQuery("/api/projects/invites", currentProjectId), { cache: "no-store" }),
       ]);
 
-      const docsJson = (await documentsResponse.json()) as DocumentApiResponse;
-      const codersJson = (await codersResponse.json()) as CoderApiResponse;
-      const invitesJson = (await invitesResponse.json()) as { invites?: Invite[]; error?: string };
+      const docsJson = await parseResponseJson<DocumentApiResponse>(documentsResponse, {});
+      const codersJson = await parseResponseJson<CoderApiResponse>(codersResponse, {});
+      const invitesJson = await parseResponseJson<{ invites?: Invite[]; error?: string }>(invitesResponse, {});
 
       if (!documentsResponse.ok) {
         throw new Error(docsJson.error ?? "Failed to load documents.");
@@ -236,11 +237,11 @@ export default function ProjectDashboardPage() {
         }),
       });
 
-      const payload = (await response.json()) as {
+      const payload = await parseResponseJson<{
         setupRequired?: boolean;
         setupHint?: string;
         error?: string;
-      };
+      }>(response, {});
 
       if (!response.ok) {
         throw new Error(payload.error ?? "Failed to create document.");
@@ -279,11 +280,11 @@ export default function ProjectDashboardPage() {
         }),
       });
 
-      const payload = (await response.json()) as {
+      const payload = await parseResponseJson<{
         setupRequired?: boolean;
         setupHint?: string;
         error?: string;
-      };
+      }>(response, {});
 
       if (!response.ok) {
         throw new Error(payload.error ?? "Failed to save assignments.");
@@ -330,7 +331,7 @@ export default function ProjectDashboardPage() {
         }),
       });
 
-      const payload = (await response.json()) as { error?: string };
+      const payload = await parseResponseJson<{ error?: string }>(response, {});
       if (!response.ok) {
         throw new Error(payload.error ?? "Failed to create invite.");
       }
@@ -366,7 +367,7 @@ export default function ProjectDashboardPage() {
         }),
       });
 
-      const payload = (await response.json()) as { error?: string };
+      const payload = await parseResponseJson<{ error?: string }>(response, {});
       if (!response.ok) {
         throw new Error(payload.error ?? "Failed to save member settings.");
       }

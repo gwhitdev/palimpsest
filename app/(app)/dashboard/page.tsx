@@ -2,6 +2,7 @@
 
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import { parseResponseJson } from "@/lib/http";
 import { getActiveProjectId, setActiveProjectId } from "@/lib/projectClient";
 
 type ProjectRole = "owner" | "coder";
@@ -60,7 +61,7 @@ export default function DashboardPage() {
         : "/api/projects";
 
       const projectResponse = await fetch(projectPath, { cache: "no-store" });
-      const projectJson = (await projectResponse.json()) as ProjectApiResponse;
+      const projectJson = await parseResponseJson<ProjectApiResponse>(projectResponse, {});
 
       if (!projectResponse.ok) {
         throw new Error(projectJson.error ?? "Unable to load projects.");
@@ -74,7 +75,10 @@ export default function DashboardPage() {
       }
 
       const pendingResponse = await fetch("/api/projects/invites/pending", { cache: "no-store" });
-      const pendingJson = (await pendingResponse.json()) as { invites?: PendingInvite[]; error?: string };
+      const pendingJson = await parseResponseJson<{ invites?: PendingInvite[]; error?: string }>(
+        pendingResponse,
+        {},
+      );
 
       if (pendingResponse.ok) {
         setPendingInvites(pendingJson.invites ?? []);
@@ -102,7 +106,7 @@ export default function DashboardPage() {
         body: JSON.stringify({ name: newProjectName }),
       });
 
-      const payload = (await response.json()) as CreateProjectResponse;
+      const payload = await parseResponseJson<CreateProjectResponse>(response, {});
       if (!response.ok || !payload.project) {
         throw new Error(payload.error ?? "Failed to create project.");
       }
@@ -128,7 +132,7 @@ export default function DashboardPage() {
         body: JSON.stringify({ token }),
       });
 
-      const payload = (await response.json()) as { error?: string; projectId?: string };
+      const payload = await parseResponseJson<{ error?: string; projectId?: string }>(response, {});
       if (!response.ok) {
         throw new Error(payload.error ?? "Failed to accept invite.");
       }
