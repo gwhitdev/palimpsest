@@ -36,7 +36,7 @@ export async function POST(request: NextRequest) {
           details: acceptResult.error.details ?? null,
           hint: acceptResult.error.hint ?? null,
           setupRequired: true,
-          setupHint: "Run supabase/fix_accept_project_invite_ambiguous_project_id.sql in your database.",
+          setupHint: "Run supabase/force_recreate_accept_project_invite.sql in your database.",
         },
         { status: 400 },
       );
