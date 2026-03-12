@@ -39,6 +39,11 @@ mark.level-3 {
   cursor: pointer;
 }
 
+mark.ann-mark.ann-hovered {
+  box-shadow: 0 0 0 2px #111827;
+  filter: saturate(1.25);
+}
+
 button.ann-tag {
   display: inline-block;
   font-size: 10px;

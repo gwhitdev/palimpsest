@@ -8,32 +8,12 @@ type Props = {
   docId: string;
   docContent?: string;
   projectId?: string | null;
-  onAcceptSuggestion?: (suggestion: { techId: string; text: string }, index: number) => Promise<void>;
 };
 
-export default function TechniquePanel({ docId, docContent, projectId, onAcceptSuggestion }: Props) {
+export default function TechniquePanel({ docId, docContent, projectId }: Props) {
   const [error, setError] = useState<string | null>(null);
-  const [acceptingIndex, setAcceptingIndex] = useState<number | null>(null);
-  const { aiSuggestions, setAISuggestions, setLoadingAI, isLoadingAI, dismissSuggestion } = useAnnotationStore();
-
-  const handleAcceptSuggestion = async (index: number) => {
-    const suggestion = aiSuggestions[index];
-    if (!suggestion) return;
-
-    setError(null);
-    setAcceptingIndex(index);
-
-    try {
-      if (onAcceptSuggestion) {
-        await onAcceptSuggestion({ techId: suggestion.techId, text: suggestion.text }, index);
-      }
-      dismissSuggestion(index);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to accept suggestion.");
-    } finally {
-      setAcceptingIndex(null);
-    }
-  };
+  const { aiSuggestions, setAISuggestions, setLoadingAI, isLoadingAI, setSuggestionsDrawerOpen } =
+    useAnnotationStore();
 
   const requestAiSuggestions = async () => {
     if (!docContent) return;
@@ -64,6 +44,7 @@ export default function TechniquePanel({ docId, docContent, projectId, onAcceptS
       }
 
       setAISuggestions(data.suggestions ?? []);
+      setSuggestionsDrawerOpen(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to fetch suggestions.");
     } finally {
@@ -84,6 +65,13 @@ export default function TechniquePanel({ docId, docContent, projectId, onAcceptS
         >
           {isLoadingAI ? "Generating..." : "Generate AI Suggestions"}
         </button>
+        <button
+          className="mt-2 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-900"
+          onClick={() => setSuggestionsDrawerOpen(true)}
+          type="button"
+        >
+          Open Suggestions Drawer ({aiSuggestions.length})
+        </button>
         {error && <p className="mt-2 text-xs text-red-700">{error}</p>}
       </div>
 
@@ -99,33 +87,7 @@ export default function TechniquePanel({ docId, docContent, projectId, onAcceptS
         </ul>
       </div>
 
-      <div className="rounded-xl border border-gray-200 p-3">
-        <h3 className="text-sm font-semibold">AI Suggestions</h3>
-        {aiSuggestions.length === 0 && <p className="mt-2 text-xs text-gray-600">No suggestions yet.</p>}
-        <ul className="mt-2 space-y-2">
-          {aiSuggestions.map((suggestion, index) => (
-            <li key={`${suggestion.techId}-${index}`} className="rounded-md border border-gray-100 p-2">
-              <p className="text-xs font-semibold">{suggestion.techId}</p>
-              <p className="text-xs text-gray-600">{suggestion.text}</p>
-              <button
-                className="mt-2 text-xs font-medium text-gray-700 underline"
-                onClick={() => dismissSuggestion(index)}
-                type="button"
-              >
-                Dismiss
-              </button>
-              <button
-                className="ml-3 mt-2 text-xs font-medium text-gray-900 underline disabled:opacity-50"
-                disabled={acceptingIndex === index}
-                onClick={() => void handleAcceptSuggestion(index)}
-                type="button"
-              >
-                {acceptingIndex === index ? "Accepting..." : "Accept"}
-              </button>
-            </li>
-          ))}
-        </ul>
-      </div>
+      <p className="text-xs text-gray-500">Suggestions are available in the separate AI drawer.</p>
     </div>
   );
 }

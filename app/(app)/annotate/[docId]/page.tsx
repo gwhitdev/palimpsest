@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
+import AISuggestionsDrawer from "@/components/annotation/AISuggestionsDrawer";
 import AnnotationList from "@/components/annotation/AnnotationList";
 import SelectionPopup from "@/components/annotation/SelectionPopup";
 import TechniquePanel from "@/components/annotation/TechniquePanel";
@@ -27,7 +28,14 @@ export default function AnnotatePage() {
   const [projectId, setProjectId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const { annotations, addAnnotation, removeAnnotation, setAnnotations } = useAnnotationStore();
+  const {
+    annotations,
+    addAnnotation,
+    removeAnnotation,
+    setAnnotations,
+    setHoveredAnnotationId,
+    setSuggestionContext,
+  } = useAnnotationStore();
   const supabase = createClient();
 
   useEffect(() => {
@@ -109,6 +117,17 @@ export default function AnnotatePage() {
   useEffect(() => {
     if (!docId || !projectId) return;
 
+    setSuggestionContext(`${projectId}:${docId}`);
+    setHoveredAnnotationId(null);
+
+    return () => {
+      setHoveredAnnotationId(null);
+    };
+  }, [docId, projectId, setHoveredAnnotationId, setSuggestionContext]);
+
+  useEffect(() => {
+    if (!docId || !projectId) return;
+
     const channel = supabase
       .channel(`annotations-${projectId}-${docId}`)
       .on(
@@ -183,11 +202,26 @@ export default function AnnotatePage() {
   const handleRemove = async (id: string) => {
     if (!projectId) return;
 
-    await fetch("/api/annotate", {
-      method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id, projectId }),
-    });
+    const annotationToRestore = annotations.find((annotation) => annotation.id === id);
+    removeAnnotation(id);
+
+    try {
+      const response = await fetch("/api/annotate", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, projectId }),
+      });
+
+      const payload = await parseResponseJson<{ error?: string }>(response, {});
+      if (!response.ok) {
+        throw new Error(payload.error ?? "Failed to remove annotation.");
+      }
+    } catch (err) {
+      if (annotationToRestore) {
+        addAnnotation(annotationToRestore);
+      }
+      setError(err instanceof Error ? err.message : "Failed to remove annotation.");
+    }
   };
 
   const handleAcceptSuggestion = async (suggestion: { techId: string; text: string }) => {
@@ -229,7 +263,7 @@ export default function AnnotatePage() {
   };
 
   return (
-    <div className="grid h-[calc(100vh-65px)] grid-cols-[280px_1fr_320px] overflow-hidden">
+    <div className="relative grid h-[calc(100vh-65px)] grid-cols-[280px_1fr_320px] overflow-hidden">
       <aside className="overflow-y-auto border-r p-4">
         <AnnotationList annotations={annotations} />
       </aside>
@@ -256,13 +290,10 @@ export default function AnnotatePage() {
       </main>
 
       <aside className="overflow-y-auto border-l">
-        <TechniquePanel
-          docId={docId}
-          docContent={document?.content}
-          onAcceptSuggestion={handleAcceptSuggestion}
-          projectId={projectId}
-        />
+        <TechniquePanel docId={docId} docContent={document?.content} projectId={projectId} />
       </aside>
+
+      <AISuggestionsDrawer onAcceptSuggestion={handleAcceptSuggestion} />
     </div>
   );
 }
