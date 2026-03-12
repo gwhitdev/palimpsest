@@ -22,7 +22,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
           <p className="text-sm font-semibold">Palimpsest</p>
           <div className="flex items-center gap-4 text-sm">
             <Link className="text-gray-700 hover:text-black" href="/dashboard">
-              Dashboard
+              User Dashboard
             </Link>
             <Link className="text-gray-700 hover:text-black" href="/stats">
               Stats

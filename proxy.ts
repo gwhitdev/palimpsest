@@ -1,7 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextRequest, NextResponse } from "next/server";
 
-const protectedPrefixes = ["/dashboard", "/annotate", "/stats"];
+const protectedPrefixes = ["/dashboard", "/projects", "/annotate", "/stats"];
 
 function isProtectedPath(pathname: string): boolean {
   return protectedPrefixes.some((prefix) => pathname.startsWith(prefix));
@@ -58,5 +58,5 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/dashboard/:path*", "/annotate/:path*", "/stats/:path*", "/login", "/register"],
+  matcher: ["/dashboard/:path*", "/projects/:path*", "/annotate/:path*", "/stats/:path*", "/login", "/register"],
 };
