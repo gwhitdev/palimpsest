@@ -363,13 +363,8 @@ drop policy if exists "Members can read project memberships" on public.project_m
 create policy "Members can read project memberships"
   on public.project_memberships for select to authenticated
   using (
-    exists (
-      select 1
-      from public.project_memberships viewer
-      where viewer.project_id = project_memberships.project_id
-        and viewer.user_id = auth.uid()
-        and viewer.status = 'active'
-    )
+    project_memberships.user_id = auth.uid()
+    or public.project_has_permission(project_memberships.project_id, auth.uid(), 'manage_members')
   );
 
 drop policy if exists "Managers can change project memberships" on public.project_memberships;
@@ -381,15 +376,7 @@ create policy "Managers can change project memberships"
 drop policy if exists "Members can read permission overrides" on public.project_member_permissions;
 create policy "Members can read permission overrides"
   on public.project_member_permissions for select to authenticated
-  using (
-    exists (
-      select 1
-      from public.project_memberships viewer
-      where viewer.project_id = project_member_permissions.project_id
-        and viewer.user_id = auth.uid()
-        and viewer.status = 'active'
-    )
-  );
+  using (public.project_has_permission(project_member_permissions.project_id, auth.uid(), 'view_documents'));
 
 drop policy if exists "Managers can change permission overrides" on public.project_member_permissions;
 create policy "Managers can change permission overrides"
