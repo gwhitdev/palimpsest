@@ -6,6 +6,7 @@ import AnnotationList from "@/components/annotation/AnnotationList";
 import SelectionPopup from "@/components/annotation/SelectionPopup";
 import TechniquePanel from "@/components/annotation/TechniquePanel";
 import TextAnnotator from "@/components/annotation/TextAnnotator";
+import { getActiveProjectId, setActiveProjectId, withProjectQuery } from "@/lib/projectClient";
 import { createClient } from "@/lib/supabase/client";
 import { Annotation, Document } from "@/lib/types";
 import { useAnnotationStore } from "@/store/annotationStore";
@@ -22,26 +23,64 @@ export default function AnnotatePage() {
   const [document, setDocument] = useState<Document | null>(null);
   const [selection, setSelection] = useState<SelectionState | null>(null);
   const [coderName, setCoderName] = useState("Coder");
+  const [projectId, setProjectId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const { annotations, addAnnotation, removeAnnotation, setAnnotations } = useAnnotationStore();
   const supabase = createClient();
 
   useEffect(() => {
-    if (!docId) return;
+    const queryProjectId =
+      typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("projectId");
+    const preferredProjectId = queryProjectId || getActiveProjectId();
+    const url = withProjectQuery("/api/projects", preferredProjectId);
+
+    fetch(url)
+      .then((response) => response.json().then((payload) => ({ ok: response.ok, payload })))
+      .then(({ ok, payload }) => {
+        if (!ok) {
+          throw new Error((payload as { error?: string }).error ?? "Unable to resolve project context.");
+        }
+
+        const nextProjectId = (payload as { currentProjectId?: string }).currentProjectId;
+        if (!nextProjectId) {
+          throw new Error("No active project found.");
+        }
+
+        setProjectId(nextProjectId);
+        setActiveProjectId(nextProjectId);
+      })
+      .catch((err) => {
+        setError(err instanceof Error ? err.message : "Unable to resolve project context.");
+      });
+  }, []);
+
+  useEffect(() => {
+    if (!docId || !projectId) return;
 
     supabase
       .from("documents")
       .select("id, title, source, content, created_at")
       .eq("id", docId)
+      .eq("project_id", projectId)
       .single()
-      .then(({ data }) => {
+      .then(({ data, error: documentError }) => {
+        if (documentError) {
+          setError(documentError.message);
+          setDocument(null);
+          return;
+        }
+
         setDocument((data as Document | null) ?? null);
       });
 
-    fetch(`/api/annotate?docId=${docId}`)
+    fetch(withProjectQuery(`/api/annotate?docId=${docId}`, projectId))
       .then((response) => response.json())
       .then((data) => {
         setAnnotations((data.annotations ?? []) as Annotation[]);
+      })
+      .catch((err) => {
+        setError(err instanceof Error ? err.message : "Unable to load annotations.");
       });
 
     supabase.auth.getUser().then(async ({ data }) => {
@@ -57,19 +96,31 @@ export default function AnnotatePage() {
 
       setCoderName(coder?.display_name ?? fallbackName);
     });
-  }, [docId, setAnnotations, supabase]);
+  }, [docId, projectId, setAnnotations, supabase]);
 
   useEffect(() => {
+    if (!docId || !projectId) return;
+
     const channel = supabase
-      .channel(`annotations-${docId}`)
+      .channel(`annotations-${projectId}-${docId}`)
       .on(
         "postgres_changes",
-        { event: "INSERT", schema: "public", table: "annotations", filter: `document_id=eq.${docId}` },
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "annotations",
+          filter: `document_id=eq.${docId}`,
+        },
         ({ new: row }) => addAnnotation(row as Annotation),
       )
       .on(
         "postgres_changes",
-        { event: "DELETE", schema: "public", table: "annotations", filter: `document_id=eq.${docId}` },
+        {
+          event: "DELETE",
+          schema: "public",
+          table: "annotations",
+          filter: `document_id=eq.${docId}`,
+        },
         ({ old: row }) => removeAnnotation((row as { id: string }).id),
       )
       .subscribe();
@@ -77,7 +128,7 @@ export default function AnnotatePage() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [addAnnotation, docId, removeAnnotation, supabase]);
+  }, [addAnnotation, docId, projectId, removeAnnotation, supabase]);
 
   const handleSelection = () => {
     const sel = window.getSelection();
@@ -99,12 +150,13 @@ export default function AnnotatePage() {
   };
 
   const handleAnnotate = async (techId: string) => {
-    if (!selection || !docId) return;
+    if (!selection || !docId || !projectId) return;
 
     await fetch("/api/annotate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
+        projectId,
         document_id: docId,
         tech_id: techId,
         quoted_text: selection.text,
@@ -121,10 +173,12 @@ export default function AnnotatePage() {
   };
 
   const handleRemove = async (id: string) => {
+    if (!projectId) return;
+
     await fetch("/api/annotate", {
       method: "DELETE",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id }),
+      body: JSON.stringify({ id, projectId }),
     });
   };
 
@@ -135,6 +189,7 @@ export default function AnnotatePage() {
       </aside>
 
       <main className="overflow-y-auto p-6" onMouseUp={handleSelection}>
+        {error && <p className="mb-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">{error}</p>}
         {document ? (
           <TextAnnotator
             content={document.content}
@@ -155,7 +210,7 @@ export default function AnnotatePage() {
       </main>
 
       <aside className="overflow-y-auto border-l">
-        <TechniquePanel docId={docId} docContent={document?.content} />
+        <TechniquePanel docId={docId} docContent={document?.content} projectId={projectId} />
       </aside>
     </div>
   );

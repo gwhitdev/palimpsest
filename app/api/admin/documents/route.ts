@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { isMissingRelationError, missingBaseSchemaResponse, requireAdmin } from "@/lib/server/adminAuth";
+import {
+  extractProjectId,
+  isMissingRelationError,
+  resolveProjectContext,
+  schemaNotReadyResponse,
+} from "@/lib/server/projectAuth";
 
 type DocumentInsertBody = {
   title?: string;
@@ -13,27 +18,32 @@ type AssignmentRow = {
   coder_id: string;
 };
 
-const setupHint = "Run supabase/base_schema.sql first, then supabase/document_assignments.sql in Supabase SQL Editor.";
+const setupHint =
+  "Run supabase/base_schema.sql, then supabase/project_multitenancy_migration.sql, then supabase/document_assignments.sql.";
 
-export async function GET() {
-  const auth = await requireAdmin();
+export async function GET(request: NextRequest) {
+  const auth = await resolveProjectContext(extractProjectId(request), "manage_documents");
   if (!auth.ok) return auth.response;
 
-  const { data: docs, error: docsError } = await auth.supabase
+  const { projectId, supabase } = auth.context;
+
+  const { data: docs, error: docsError } = await supabase
     .from("documents")
-    .select("id, title, source, content, created_at")
+    .select("id, project_id, title, source, content, created_at")
+    .eq("project_id", projectId)
     .order("created_at", { ascending: false });
 
   if (docsError) {
     if (isMissingRelationError(docsError)) {
-      return missingBaseSchemaResponse();
+      return schemaNotReadyResponse();
     }
     return NextResponse.json({ error: docsError.message }, { status: 500 });
   }
 
-  const { data: assignments, error: assignmentError } = await auth.supabase
+  const { data: assignments, error: assignmentError } = await supabase
     .from("document_assignments")
-    .select("document_id, coder_id");
+    .select("project_id, document_id, coder_id")
+    .eq("project_id", projectId);
 
   if (assignmentError && !isMissingRelationError(assignmentError)) {
     return NextResponse.json({ error: assignmentError.message }, { status: 500 });
@@ -55,6 +65,7 @@ export async function GET() {
 
   return NextResponse.json({
     documents,
+    projectId,
     assignmentTableReady: !assignmentError,
     setupRequired: Boolean(assignmentError && isMissingRelationError(assignmentError)),
     setupHint: assignmentError ? setupHint : undefined,
@@ -62,10 +73,11 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
-  const auth = await requireAdmin();
+  const body = (await request.json()) as DocumentInsertBody & { projectId?: string };
+  const auth = await resolveProjectContext(extractProjectId(request, body), "manage_documents");
   if (!auth.ok) return auth.response;
 
-  const body = (await request.json()) as DocumentInsertBody;
+  const { projectId, supabase, userId } = auth.context;
   const title = body.title?.trim();
   const source = body.source?.trim() || null;
   const content = body.content?.trim();
@@ -75,20 +87,21 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "title and content are required." }, { status: 400 });
   }
 
-  const { data: document, error: documentError } = await auth.supabase
+  const { data: document, error: documentError } = await supabase
     .from("documents")
     .insert({
+      project_id: projectId,
       title,
       source,
       content,
-      created_by: auth.userId,
+      created_by: userId,
     })
-    .select("id, title, source, content, created_at")
+    .select("id, project_id, title, source, content, created_at")
     .single();
 
   if (documentError || !document) {
     if (isMissingRelationError(documentError)) {
-      return missingBaseSchemaResponse();
+      return schemaNotReadyResponse();
     }
     return NextResponse.json({ error: documentError?.message ?? "Insert failed." }, { status: 500 });
   }
@@ -96,12 +109,35 @@ export async function POST(request: NextRequest) {
   let setupRequired = false;
 
   if (assignedCoderIds.length > 0) {
+    const validMembersResult = await supabase
+      .from("project_memberships")
+      .select("user_id")
+      .eq("project_id", projectId)
+      .eq("status", "active")
+      .eq("role", "coder")
+      .in("user_id", assignedCoderIds);
+
+    if (validMembersResult.error) {
+      return NextResponse.json({ error: validMembersResult.error.message }, { status: 500 });
+    }
+
+    const validCoderIds = new Set((validMembersResult.data ?? []).map((row) => row.user_id));
+    const invalidCoderIds = assignedCoderIds.filter((coderId) => !validCoderIds.has(coderId));
+
+    if (invalidCoderIds.length > 0) {
+      return NextResponse.json(
+        { error: `Invalid coder assignments: ${invalidCoderIds.join(", ")}` },
+        { status: 400 },
+      );
+    }
+
     const rows = assignedCoderIds.map((coderId) => ({
+      project_id: projectId,
       document_id: document.id,
       coder_id: coderId,
     }));
 
-    const assignmentInsert = await auth.supabase.from("document_assignments").insert(rows);
+    const assignmentInsert = await supabase.from("document_assignments").insert(rows);
 
     if (assignmentInsert.error) {
       if (isMissingRelationError(assignmentInsert.error)) {

@@ -7,9 +7,10 @@ import { useAnnotationStore } from "@/store/annotationStore";
 type Props = {
   docId: string;
   docContent?: string;
+  projectId?: string | null;
 };
 
-export default function TechniquePanel({ docId, docContent }: Props) {
+export default function TechniquePanel({ docId, docContent, projectId }: Props) {
   const [error, setError] = useState<string | null>(null);
   const { aiSuggestions, setAISuggestions, setLoadingAI, isLoadingAI, dismissSuggestion } = useAnnotationStore();
 
@@ -23,7 +24,7 @@ export default function TechniquePanel({ docId, docContent }: Props) {
       const response = await fetch("/api/ai-suggest", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: docContent, documentId: docId }),
+        body: JSON.stringify({ text: docContent, documentId: docId, projectId }),
       });
 
       const data = (await response.json()) as { suggestions?: { techId: string; text: string }[]; error?: string };

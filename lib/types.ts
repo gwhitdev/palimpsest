@@ -13,6 +13,7 @@ export interface Technique {
 
 export interface Document {
   id: string;
+  project_id?: string;
   title: string;
   source: string | null;
   content: string;
@@ -26,12 +27,15 @@ export interface DocumentWithAssignments extends Document {
 export interface Coder {
   id: string;
   display_name: string;
-  role: "admin" | "coder";
+  role: "owner" | "coder";
   created_at?: string;
+  grantPermissions?: string[];
+  denyPermissions?: string[];
 }
 
 export interface Annotation {
   id: string;
+  project_id?: string;
   document_id: string;
   coder_id: string;
   coder_name: string;

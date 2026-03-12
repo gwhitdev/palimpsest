@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { NextRequest, NextResponse } from "next/server";
+import { extractProjectId, resolveProjectContext } from "@/lib/server/projectAuth";
 import { TAXONOMY } from "@/lib/taxonomy";
 
 const anthropic = new Anthropic({
@@ -14,10 +15,16 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const { text, documentId } = (await request.json()) as {
+  const body = (await request.json()) as {
     text?: string;
     documentId?: string;
+    projectId?: string;
   };
+
+  const auth = await resolveProjectContext(extractProjectId(request, body), "annotate");
+  if (!auth.ok) return auth.response;
+
+  const { text, documentId } = body;
 
   if (!text || !documentId) {
     return NextResponse.json(

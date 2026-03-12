@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { NextRequest } from "next/server";
+import { extractProjectId, resolveProjectContext } from "@/lib/server/projectAuth";
 
 type ExportRow = {
   tech_id: string;
@@ -13,12 +14,16 @@ type ExportRow = {
   } | null;
 };
 
-export async function GET() {
-  const supabase = await createClient();
+export async function GET(request: NextRequest) {
+  const auth = await resolveProjectContext(extractProjectId(request), "export_data");
+  if (!auth.ok) return auth.response;
+
+  const { supabase, projectId } = auth.context;
 
   const { data, error } = await supabase
     .from("annotations")
     .select("*, documents(title, source)")
+    .eq("project_id", projectId)
     .order("created_at", { ascending: true });
 
   if (error) {
