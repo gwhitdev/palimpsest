@@ -184,6 +184,23 @@ create index if not exists idx_annotations_project_id on public.annotations(proj
 create index if not exists idx_assignments_project_id on public.document_assignments(project_id);
 create index if not exists idx_project_memberships_user on public.project_memberships(user_id);
 
+create or replace function public.role_has_permission(member_role text, requested_permission text)
+returns boolean
+language sql
+stable
+as $$
+  select case
+    when member_role = 'owner' then true
+    when member_role = 'coder' then requested_permission in (
+      'view_documents',
+      'annotate',
+      'view_stats',
+      'export_data'
+    )
+    else false
+  end;
+$$;
+
 create or replace function public.project_has_permission(target_project uuid, target_user uuid, requested_permission text)
 returns boolean
 language plpgsql
@@ -228,6 +245,7 @@ $$;
 drop function if exists public.project_has_permission(text, uuid, uuid);
 
 grant execute on function public.project_has_permission(uuid, uuid, text) to authenticated;
+grant execute on function public.role_has_permission(text, text) to authenticated;
 
 create or replace function public.accept_project_invite(invite_token uuid)
 returns table(project_id uuid, role text)

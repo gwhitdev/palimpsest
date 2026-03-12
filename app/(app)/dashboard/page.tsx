@@ -22,6 +22,14 @@ type ProjectApiResponse = {
   error?: string;
 };
 
+type CreateProjectResponse = {
+  project?: {
+    id: string;
+    name: string;
+  };
+  error?: string;
+};
+
 type DocumentApiResponse = {
   documents?: DocumentWithAssignments[];
   setupRequired?: boolean;
@@ -84,6 +92,7 @@ export default function DashboardPage() {
   const [busyDocId, setBusyDocId] = useState<string | null>(null);
   const [busyMemberId, setBusyMemberId] = useState<string | null>(null);
   const [busyInviteId, setBusyInviteId] = useState<string | null>(null);
+  const [busyProjectAction, setBusyProjectAction] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -95,10 +104,16 @@ export default function DashboardPage() {
   const [inviteRole, setInviteRole] = useState<ProjectRole>("coder");
   const [inviteGrantInput, setInviteGrantInput] = useState("");
   const [inviteDenyInput, setInviteDenyInput] = useState("");
+  const [newProjectName, setNewProjectName] = useState("");
 
   const coderNameMap = useMemo(() => {
     return new Map(coders.map((coder) => [coder.id, coder.display_name]));
   }, [coders]);
+
+  const activeProject = useMemo(
+    () => projects.find((project) => project.id === projectId) ?? null,
+    [projectId, projects],
+  );
 
   const buildDrafts = (docs: DocumentWithAssignments[]): AssignmentDrafts => {
     return docs.reduce<AssignmentDrafts>((acc, document) => {
@@ -226,6 +241,46 @@ export default function DashboardPage() {
   useEffect(() => {
     void loadDashboard();
   }, [loadDashboard]);
+
+  const handleOpenProject = async (nextProjectId: string) => {
+    setBusyProjectAction(nextProjectId);
+    setError(null);
+
+    try {
+      setProjectId(nextProjectId);
+      setActiveProjectId(nextProjectId);
+      await loadDashboard(nextProjectId);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to open project.");
+    } finally {
+      setBusyProjectAction(null);
+    }
+  };
+
+  const handleCreateProject = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setBusyProjectAction("create");
+    setError(null);
+
+    try {
+      const response = await fetch("/api/projects", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: newProjectName }),
+      });
+
+      const payload = (await response.json()) as CreateProjectResponse;
+      if (!response.ok || !payload.project) {
+        throw new Error(payload.error ?? "Failed to create project.");
+      }
+
+      setNewProjectName("");
+      await handleOpenProject(payload.project.id);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to create project.");
+      setBusyProjectAction(null);
+    }
+  };
 
   const handleCreateDocument = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -424,30 +479,50 @@ export default function DashboardPage() {
           : "Open documents and contribute annotations."}
       </p>
 
-      {projects.length > 1 && (
-        <div className="mt-4 max-w-md">
-          <label className="text-xs font-medium text-gray-700" htmlFor="project-select">
-            Active project
-          </label>
-          <select
-            className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
-            id="project-select"
-            onChange={(event) => {
-              const nextProjectId = event.target.value;
-              setProjectId(nextProjectId);
-              setActiveProjectId(nextProjectId);
-              void loadDashboard(nextProjectId);
-            }}
-            value={projectId ?? ""}
+      <p className="mt-1 text-xs text-gray-500">
+        Active project: {activeProject?.name ?? "Loading..."}
+      </p>
+
+      <section className="mt-6 rounded-xl border border-gray-200 bg-white p-4">
+        <h2 className="text-sm font-semibold">Projects</h2>
+        <p className="mt-1 text-xs text-gray-600">Create a project, then open it to add documents or code annotations.</p>
+
+        <form className="mt-3 flex flex-col gap-2 sm:flex-row" onSubmit={handleCreateProject}>
+          <input
+            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+            onChange={(event) => setNewProjectName(event.target.value)}
+            placeholder="New project name"
+            required
+            value={newProjectName}
+          />
+          <button
+            className="rounded-md bg-gray-900 px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+            disabled={busyProjectAction === "create"}
+            type="submit"
           >
-            {projects.map((project) => (
-              <option key={project.id} value={project.id}>
-                {project.name} ({project.role})
-              </option>
-            ))}
-          </select>
-        </div>
-      )}
+            {busyProjectAction === "create" ? "Creating..." : "Create Project"}
+          </button>
+        </form>
+
+        <ul className="mt-4 space-y-2">
+          {projects.map((project) => (
+            <li key={project.id} className="flex items-center justify-between rounded-md border border-gray-100 p-3">
+              <div>
+                <p className="text-sm font-medium">{project.name}</p>
+                <p className="text-xs text-gray-600">Role: {project.role}</p>
+              </div>
+              <button
+                className="rounded-md border border-gray-300 bg-white px-3 py-2 text-xs font-medium text-gray-900 disabled:opacity-50"
+                disabled={project.id === projectId || busyProjectAction === project.id}
+                onClick={() => void handleOpenProject(project.id)}
+                type="button"
+              >
+                {project.id === projectId ? "Current" : busyProjectAction === project.id ? "Opening..." : "Open"}
+              </button>
+            </li>
+          ))}
+        </ul>
+      </section>
 
       {notice && (
         <p className="mt-4 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
@@ -667,6 +742,9 @@ export default function DashboardPage() {
 
       <section className="mt-6 rounded-xl border border-gray-200 bg-white p-4">
         <h2 className="text-sm font-semibold">Documents</h2>
+        <p className="mt-1 text-xs text-gray-600">
+          Showing documents for: {activeProject?.name ?? "Current Project"}
+        </p>
         {loading && <p className="mt-2 text-sm text-gray-600">Loading...</p>}
         {!loading && documents.length === 0 && (
           <p className="mt-2 text-sm text-gray-600">No documents found yet.</p>

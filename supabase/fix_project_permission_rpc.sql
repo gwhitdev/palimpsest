@@ -6,6 +6,23 @@
 -- Remove ambiguous overload first.
 drop function if exists public.project_has_permission(text, uuid, uuid);
 
+create or replace function public.role_has_permission(member_role text, requested_permission text)
+returns boolean
+language sql
+stable
+as $$
+  select case
+    when member_role = 'owner' then true
+    when member_role = 'coder' then requested_permission in (
+      'view_documents',
+      'annotate',
+      'view_stats',
+      'export_data'
+    )
+    else false
+  end;
+$$;
+
 create or replace function public.project_has_permission(target_project uuid, target_user uuid, requested_permission text)
 returns boolean
 language plpgsql
@@ -48,6 +65,7 @@ end
 $$;
 
 grant execute on function public.project_has_permission(uuid, uuid, text) to authenticated;
+grant execute on function public.role_has_permission(text, text) to authenticated;
 
 -- Ask PostgREST to refresh cached schema signatures.
 notify pgrst, 'reload schema';

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createClient } from "@/lib/supabase/server";
 import {
   extractProjectId,
   isMissingRelationError,
@@ -11,6 +12,10 @@ type MembershipRow = {
   role: "owner" | "coder";
   created_at: string;
   projects: { name: string | null }[] | { name: string | null } | null;
+};
+
+type CreateProjectBody = {
+  name?: string;
 };
 
 export async function GET(request: NextRequest) {
@@ -50,4 +55,42 @@ export async function GET(request: NextRequest) {
     currentRole: role,
     projects,
   });
+}
+
+export async function POST(request: NextRequest) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser();
+
+  if (userError || !user) {
+    return NextResponse.json({ error: "Unauthorised" }, { status: 401 });
+  }
+
+  const body = (await request.json()) as CreateProjectBody;
+  const projectName = body.name?.trim();
+
+  if (!projectName) {
+    return NextResponse.json({ error: "Project name is required." }, { status: 400 });
+  }
+
+  const projectInsert = await supabase
+    .from("projects")
+    .insert({
+      name: projectName,
+      created_by: user.id,
+    })
+    .select("id, name, created_by, created_at")
+    .single();
+
+  if (isMissingRelationError(projectInsert.error)) {
+    return schemaNotReadyResponse();
+  }
+
+  if (projectInsert.error) {
+    return NextResponse.json({ error: projectInsert.error.message }, { status: 500 });
+  }
+
+  return NextResponse.json({ project: projectInsert.data });
 }
