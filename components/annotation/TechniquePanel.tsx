@@ -27,10 +27,19 @@ export default function TechniquePanel({ docId, docContent, projectId }: Props) 
         body: JSON.stringify({ text: docContent, documentId: docId, projectId }),
       });
 
-      const data = (await response.json()) as { suggestions?: { techId: string; text: string }[]; error?: string };
+      const raw = await response.text();
+      let data: { suggestions?: { techId: string; text: string }[]; error?: string } = {};
+
+      if (raw.trim().length > 0) {
+        try {
+          data = JSON.parse(raw) as { suggestions?: { techId: string; text: string }[]; error?: string };
+        } catch {
+          data = { error: "AI service returned an unexpected response." };
+        }
+      }
 
       if (!response.ok) {
-        throw new Error(data.error ?? "Unable to fetch suggestions.");
+        throw new Error(data.error ?? `Unable to fetch suggestions (HTTP ${response.status}).`);
       }
 
       setAISuggestions(data.suggestions ?? []);
