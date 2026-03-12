@@ -14,8 +14,8 @@ export default function Home() {
         <Link className="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium" href="/register">
           Register
         </Link>
-        <Link className="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium" href="/dashboard">
-          Dashboard
+        <Link className="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium" href="/project-management">
+          Project Management
         </Link>
       </div>
     </main>

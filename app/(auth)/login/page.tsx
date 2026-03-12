@@ -40,7 +40,7 @@ export default function LoginPage() {
       }
 
       if (data.session) {
-        router.push("/dashboard");
+        router.push("/project-management");
         router.refresh();
         return;
       }
@@ -61,7 +61,7 @@ export default function LoginPage() {
     }
 
     const redirectTarget = new URLSearchParams(window.location.search).get("next");
-    const nextPath = redirectTarget && redirectTarget.startsWith("/") ? redirectTarget : "/dashboard";
+    const nextPath = redirectTarget && redirectTarget.startsWith("/") ? redirectTarget : "/project-management";
 
     router.push(nextPath);
     router.refresh();

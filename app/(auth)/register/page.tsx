@@ -38,7 +38,7 @@ export default function RegisterPage() {
     }
 
     if (data.session) {
-      router.push("/dashboard");
+      router.push("/project-management");
       router.refresh();
       return;
     }

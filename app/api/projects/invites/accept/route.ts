@@ -27,13 +27,41 @@ export async function POST(request: NextRequest) {
   });
 
   if (acceptResult.error) {
-    return NextResponse.json({ error: acceptResult.error.message }, { status: 400 });
+    const message = acceptResult.error.message ?? "Failed to accept invite.";
+    if (/column reference\s+"project_id"\s+is ambiguous/i.test(message)) {
+      return NextResponse.json(
+        {
+          error: message,
+          code: acceptResult.error.code ?? null,
+          details: acceptResult.error.details ?? null,
+          hint: acceptResult.error.hint ?? null,
+          setupRequired: true,
+          setupHint: "Run supabase/fix_accept_project_invite_ambiguous_project_id.sql in your database.",
+        },
+        { status: 400 },
+      );
+    }
+
+    return NextResponse.json(
+      {
+        error: message,
+        code: acceptResult.error.code ?? null,
+        details: acceptResult.error.details ?? null,
+        hint: acceptResult.error.hint ?? null,
+      },
+      { status: 400 },
+    );
   }
 
   const inviteSummary = Array.isArray(acceptResult.data) ? acceptResult.data[0] : null;
+  const resolvedProjectId =
+    inviteSummary?.project_id ?? inviteSummary?.invited_project_id ?? null;
+  const resolvedRole =
+    inviteSummary?.role ?? inviteSummary?.invited_role ?? null;
+
   return NextResponse.json({
     success: true,
-    projectId: inviteSummary?.project_id ?? null,
-    role: inviteSummary?.role ?? null,
+    projectId: resolvedProjectId,
+    role: resolvedRole,
   });
 }

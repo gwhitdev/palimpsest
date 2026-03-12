@@ -21,8 +21,8 @@ export default function AppLayout({ children }: { children: ReactNode }) {
         <nav className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
           <p className="text-sm font-semibold">Palimpsest</p>
           <div className="flex items-center gap-4 text-sm">
-            <Link className="text-gray-700 hover:text-black" href="/dashboard">
-              User Dashboard
+            <Link className="text-gray-700 hover:text-black" href="/project-management">
+              Project Management
             </Link>
             <Link className="text-gray-700 hover:text-black" href="/stats">
               Stats
