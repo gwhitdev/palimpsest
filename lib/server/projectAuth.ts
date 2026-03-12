@@ -45,6 +45,14 @@ export function isMissingRelationError(error: PgErrorLike | null | undefined): b
   return error.code === "42P01" || /relation\s+\"?.+\"?\s+does not exist/i.test(error.message ?? "");
 }
 
+export function isMissingFunctionError(error: PgErrorLike | null | undefined): boolean {
+  if (!error) return false;
+  return (
+    error.code === "PGRST202" ||
+    /Could not find the function public\.project_has_permission\(/i.test(error.message ?? "")
+  );
+}
+
 export function schemaNotReadyResponse() {
   return NextResponse.json(
     {
@@ -136,7 +144,7 @@ export async function resolveProjectContext(
     });
 
     if (permissionResult.error) {
-      if (isMissingRelationError(permissionResult.error)) {
+      if (isMissingRelationError(permissionResult.error) || isMissingFunctionError(permissionResult.error)) {
         return { ok: false, response: schemaNotReadyResponse() };
       }
 
