@@ -389,7 +389,7 @@ create policy "Members can read project invites"
   on public.project_invites for select to authenticated
   using (
     public.project_has_permission(project_invites.project_id, auth.uid(), 'invite_members')
-    or lower(project_invites.email) = lower((select email from auth.users where id = auth.uid()))
+    or lower(project_invites.email) = lower(coalesce(auth.jwt() ->> 'email', ''))
   );
 
 drop policy if exists "Managers can create project invites" on public.project_invites;
