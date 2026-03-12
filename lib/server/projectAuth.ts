@@ -53,6 +53,11 @@ export function isMissingFunctionError(error: PgErrorLike | null | undefined): b
   );
 }
 
+export function isAmbiguousFunctionError(error: PgErrorLike | null | undefined): boolean {
+  if (!error) return false;
+  return /Could not choose the best candidate function between:/i.test(error.message ?? "");
+}
+
 export function schemaNotReadyResponse() {
   return NextResponse.json(
     {
@@ -144,7 +149,11 @@ export async function resolveProjectContext(
     });
 
     if (permissionResult.error) {
-      if (isMissingRelationError(permissionResult.error) || isMissingFunctionError(permissionResult.error)) {
+      if (
+        isMissingRelationError(permissionResult.error) ||
+        isMissingFunctionError(permissionResult.error) ||
+        isAmbiguousFunctionError(permissionResult.error)
+      ) {
         return { ok: false, response: schemaNotReadyResponse() };
       }
 

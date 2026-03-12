@@ -132,18 +132,9 @@ begin
 end
 $$;
 
--- Compatibility overload for environments where cached RPC signatures expect
--- requested_permission first (text, uuid, uuid).
-create or replace function public.project_has_permission(requested_permission text, target_project uuid, target_user uuid)
-returns boolean
-language sql
-stable
-as $$
-  select public.project_has_permission(target_project, target_user, requested_permission);
-$$;
+drop function if exists public.project_has_permission(text, uuid, uuid);
 
 grant execute on function public.project_has_permission(uuid, uuid, text) to authenticated;
-grant execute on function public.project_has_permission(text, uuid, uuid) to authenticated;
 
 create or replace function public.accept_project_invite(invite_token uuid)
 returns table(project_id uuid, role text)

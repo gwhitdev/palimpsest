@@ -3,6 +3,9 @@
 --
 -- Run this in Supabase SQL editor, then refresh the app.
 
+-- Remove ambiguous overload first.
+drop function if exists public.project_has_permission(text, uuid, uuid);
+
 create or replace function public.project_has_permission(target_project uuid, target_user uuid, requested_permission text)
 returns boolean
 language plpgsql
@@ -44,17 +47,7 @@ begin
 end
 $$;
 
--- Compatibility overload for cached RPC signatures expecting (text, uuid, uuid)
-create or replace function public.project_has_permission(requested_permission text, target_project uuid, target_user uuid)
-returns boolean
-language sql
-stable
-as $$
-  select public.project_has_permission(target_project, target_user, requested_permission);
-$$;
-
 grant execute on function public.project_has_permission(uuid, uuid, text) to authenticated;
-grant execute on function public.project_has_permission(text, uuid, uuid) to authenticated;
 
 -- Ask PostgREST to refresh cached schema signatures.
 notify pgrst, 'reload schema';
