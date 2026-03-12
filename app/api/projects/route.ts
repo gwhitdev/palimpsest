@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import {
   extractProjectId,
+  isMissingFunctionError,
   isMissingRelationError,
   resolveProjectContext,
   schemaNotReadyResponse,
@@ -73,6 +74,25 @@ export async function POST(request: NextRequest) {
 
   if (!projectName) {
     return NextResponse.json({ error: "Project name is required." }, { status: 400 });
+  }
+
+  const createViaRpc = await supabase.rpc("create_project_for_current_user", {
+    project_name: projectName,
+  });
+
+  if (isMissingRelationError(createViaRpc.error)) {
+    return schemaNotReadyResponse();
+  }
+
+  if (createViaRpc.error && !isMissingFunctionError(createViaRpc.error)) {
+    return NextResponse.json({ error: createViaRpc.error.message }, { status: 500 });
+  }
+
+  if (!createViaRpc.error) {
+    const createdRow = Array.isArray(createViaRpc.data) ? createViaRpc.data[0] : createViaRpc.data;
+    if (createdRow) {
+      return NextResponse.json({ project: createdRow });
+    }
   }
 
   const projectInsert = await supabase

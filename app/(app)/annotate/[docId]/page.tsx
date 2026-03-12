@@ -190,6 +190,44 @@ export default function AnnotatePage() {
     });
   };
 
+  const handleAcceptSuggestion = async (suggestion: { techId: string; text: string }) => {
+    if (!projectId || !docId || !document) {
+      throw new Error("Document context is not ready.");
+    }
+
+    const quotedText = suggestion.text.trim();
+    if (!quotedText) {
+      throw new Error("Suggestion text is empty.");
+    }
+
+    const start = document.content.indexOf(quotedText);
+    if (start === -1) {
+      throw new Error("Suggested quote was not found in the document. Please annotate it manually.");
+    }
+
+    const end = start + quotedText.length;
+    const response = await fetch("/api/annotate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        projectId,
+        document_id: docId,
+        tech_id: suggestion.techId,
+        quoted_text: quotedText,
+        coder_name: coderName,
+        is_ai: true,
+        accepted: true,
+        start_offset: start,
+        end_offset: end,
+      }),
+    });
+
+    const payload = await parseResponseJson<{ error?: string }>(response, {});
+    if (!response.ok) {
+      throw new Error(payload.error ?? "Failed to save accepted suggestion.");
+    }
+  };
+
   return (
     <div className="grid h-[calc(100vh-65px)] grid-cols-[280px_1fr_320px] overflow-hidden">
       <aside className="overflow-y-auto border-r p-4">
@@ -218,7 +256,12 @@ export default function AnnotatePage() {
       </main>
 
       <aside className="overflow-y-auto border-l">
-        <TechniquePanel docId={docId} docContent={document?.content} projectId={projectId} />
+        <TechniquePanel
+          docId={docId}
+          docContent={document?.content}
+          onAcceptSuggestion={handleAcceptSuggestion}
+          projectId={projectId}
+        />
       </aside>
     </div>
   );

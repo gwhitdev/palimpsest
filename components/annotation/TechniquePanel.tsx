@@ -8,11 +8,32 @@ type Props = {
   docId: string;
   docContent?: string;
   projectId?: string | null;
+  onAcceptSuggestion?: (suggestion: { techId: string; text: string }, index: number) => Promise<void>;
 };
 
-export default function TechniquePanel({ docId, docContent, projectId }: Props) {
+export default function TechniquePanel({ docId, docContent, projectId, onAcceptSuggestion }: Props) {
   const [error, setError] = useState<string | null>(null);
+  const [acceptingIndex, setAcceptingIndex] = useState<number | null>(null);
   const { aiSuggestions, setAISuggestions, setLoadingAI, isLoadingAI, dismissSuggestion } = useAnnotationStore();
+
+  const handleAcceptSuggestion = async (index: number) => {
+    const suggestion = aiSuggestions[index];
+    if (!suggestion) return;
+
+    setError(null);
+    setAcceptingIndex(index);
+
+    try {
+      if (onAcceptSuggestion) {
+        await onAcceptSuggestion({ techId: suggestion.techId, text: suggestion.text }, index);
+      }
+      dismissSuggestion(index);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to accept suggestion.");
+    } finally {
+      setAcceptingIndex(null);
+    }
+  };
 
   const requestAiSuggestions = async () => {
     if (!docContent) return;
@@ -92,6 +113,14 @@ export default function TechniquePanel({ docId, docContent, projectId }: Props) 
                 type="button"
               >
                 Dismiss
+              </button>
+              <button
+                className="ml-3 mt-2 text-xs font-medium text-gray-900 underline disabled:opacity-50"
+                disabled={acceptingIndex === index}
+                onClick={() => void handleAcceptSuggestion(index)}
+                type="button"
+              >
+                {acceptingIndex === index ? "Accepting..." : "Accept"}
               </button>
             </li>
           ))}
