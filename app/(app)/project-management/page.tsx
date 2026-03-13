@@ -822,7 +822,13 @@ export default function ProjectManagementPage() {
       {!loading && projectId && activePanel === "documents" && (
         <section className="mt-6 rounded-xl border border-gray-200 bg-white p-4">
           <h2 className="text-sm font-semibold">Documents</h2>
-          {documents.length === 0 && <p className="mt-2 text-sm text-gray-600">No documents found yet.</p>}
+          {documents.length === 0 && (
+            <p className="mt-2 text-sm text-gray-600">
+              {role === "coder"
+                ? "No documents are available to you yet. Ask an owner to assign one."
+                : "No documents found yet."}
+            </p>
+          )}
           <ul className="mt-3 space-y-2">
             {documents.map((document) => (
               <li key={document.id} className="rounded-md border border-gray-100 p-3">
