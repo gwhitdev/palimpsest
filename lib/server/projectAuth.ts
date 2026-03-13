@@ -40,6 +40,15 @@ export type ProjectAuthResult =
       response: NextResponse;
     };
 
+export type DocumentAccessResult =
+  | {
+      ok: true;
+    }
+  | {
+      ok: false;
+      response: NextResponse;
+    };
+
 export function isMissingRelationError(error: PgErrorLike | null | undefined): boolean {
   if (!error) return false;
   return error.code === "42P01" || /relation\s+\"?.+\"?\s+does not exist/i.test(error.message ?? "");
@@ -177,4 +186,76 @@ export async function resolveProjectContext(
       role,
     },
   };
+}
+
+export async function requireDocumentAccess(
+  context: ProjectContext,
+  documentId: string,
+): Promise<DocumentAccessResult> {
+  const { supabase, projectId, userId, role } = context;
+
+  if (!documentId) {
+    return {
+      ok: false,
+      response: NextResponse.json({ error: "documentId is required." }, { status: 400 }),
+    };
+  }
+
+  if (role === "owner") {
+    return { ok: true };
+  }
+
+  const managerPermissionResult = await supabase.rpc("project_has_permission", {
+    target_project: projectId,
+    target_user: userId,
+    requested_permission: "manage_documents",
+  });
+
+  if (managerPermissionResult.error) {
+    if (
+      isMissingRelationError(managerPermissionResult.error) ||
+      isMissingFunctionError(managerPermissionResult.error) ||
+      isAmbiguousFunctionError(managerPermissionResult.error)
+    ) {
+      return { ok: false, response: schemaNotReadyResponse() };
+    }
+
+    return {
+      ok: false,
+      response: NextResponse.json({ error: managerPermissionResult.error.message }, { status: 500 }),
+    };
+  }
+
+  if (managerPermissionResult.data) {
+    return { ok: true };
+  }
+
+  const assignmentResult = await supabase
+    .from("document_assignments")
+    .select("document_id")
+    .eq("project_id", projectId)
+    .eq("document_id", documentId)
+    .eq("coder_id", userId)
+    .limit(1)
+    .maybeSingle();
+
+  if (isMissingRelationError(assignmentResult.error)) {
+    return { ok: false, response: schemaNotReadyResponse() };
+  }
+
+  if (assignmentResult.error) {
+    return {
+      ok: false,
+      response: NextResponse.json({ error: assignmentResult.error.message }, { status: 500 }),
+    };
+  }
+
+  if (!assignmentResult.data) {
+    return {
+      ok: false,
+      response: forbiddenResponse("This document is not available to you."),
+    };
+  }
+
+  return { ok: true };
 }

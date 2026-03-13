@@ -68,21 +68,24 @@ export default function AnnotatePage() {
   useEffect(() => {
     if (!docId || !projectId) return;
 
-    supabase
-      .from("documents")
-      .select("id, title, source, content, created_at")
-      .eq("id", docId)
-      .eq("project_id", projectId)
-      .single()
-      .then(({ data, error: documentError }) => {
-        if (documentError) {
-          setError(documentError.message);
-          setDocument(null);
-          return;
+    (async () => {
+      try {
+        const documentResponse = await fetch(withProjectQuery(`/api/documents/${docId}`, projectId));
+        const documentJson = await parseResponseJson<{ document?: Document; error?: string }>(
+          documentResponse,
+          {},
+        );
+
+        if (!documentResponse.ok || !documentJson.document) {
+          throw new Error(documentJson.error ?? "Unable to load document.");
         }
 
-        setDocument((data as Document | null) ?? null);
-      });
+        setDocument(documentJson.document);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Unable to load document.");
+        setDocument(null);
+      }
+    })();
 
     (async () => {
       try {

@@ -4,8 +4,7 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { parseResponseJson } from "@/lib/http";
 import { getActiveProjectId, setActiveProjectId, withProjectQuery } from "@/lib/projectClient";
-import { createClient } from "@/lib/supabase/client";
-import { Coder, Document, DocumentWithAssignments } from "@/lib/types";
+import { Coder, DocumentWithAssignments } from "@/lib/types";
 
 type ProjectRole = "owner" | "coder";
 
@@ -172,21 +171,16 @@ export default function ProjectManagementPage() {
           setProjectName(currentProject?.name ?? "Project");
 
           if (currentRole === "coder") {
-            const supabase = createClient();
-            const { data: docs, error: docsError } = await supabase
-              .from("documents")
-              .select("id, project_id, title, source, content, created_at")
-              .eq("project_id", currentProjectId)
-              .order("created_at", { ascending: false });
+            const coderDocumentsResponse = await fetch(withProjectQuery("/api/documents", currentProjectId), {
+              cache: "no-store",
+            });
+            const coderDocumentsJson = await parseResponseJson<DocumentApiResponse>(coderDocumentsResponse, {});
 
-            if (docsError) {
-              throw new Error(docsError.message);
+            if (!coderDocumentsResponse.ok) {
+              throw new Error(coderDocumentsJson.error ?? "Failed to load available documents.");
             }
 
-            const coderDocuments: DocumentWithAssignments[] = ((docs ?? []) as Document[]).map((doc) => ({
-              ...doc,
-              assignedCoderIds: [],
-            }));
+            const coderDocuments = coderDocumentsJson.documents ?? [];
 
             setDocuments(coderDocuments);
             setCoders([]);
