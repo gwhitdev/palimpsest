@@ -17,6 +17,8 @@ type Params = {
 type UpdateDocumentBody = {
   projectId?: string;
   source?: string | null;
+  content?: string;
+  amendmentNote?: string | null;
 };
 
 type UserRole = "owner" | "coder";
@@ -36,11 +38,28 @@ export async function GET(request: NextRequest, { params }: Params) {
   const access = await requireDocumentAccess(auth.context, docId);
   if (!access.ok) return access.response;
 
-  const { supabase, projectId } = auth.context;
+  const { supabase, projectId, role, userId } = auth.context;
+
+  const visibilityResult = await supabase
+    .from("project_settings")
+    .select("other_annotations_visible_to_coders, other_coders_visible_to_coders")
+    .eq("project_id", projectId)
+    .maybeSingle();
+
+  if (visibilityResult.error && !isMissingRelationError(visibilityResult.error)) {
+    return NextResponse.json({ error: visibilityResult.error.message }, { status: 500 });
+  }
+
+  const otherAnnotationsVisibleToCoders =
+    isMissingRelationError(visibilityResult.error) ||
+    visibilityResult.data?.other_annotations_visible_to_coders !== false;
+  const otherCodersVisibleToCoders =
+    isMissingRelationError(visibilityResult.error) ||
+    visibilityResult.data?.other_coders_visible_to_coders !== false;
 
   const { data: document, error } = await supabase
     .from("documents")
-    .select("id, project_id, title, source, content, created_at")
+    .select("id, project_id, title, source, content, amended_at, amended_by, amendment_note, created_at")
     .eq("id", docId)
     .eq("project_id", projectId)
     .maybeSingle();
@@ -161,17 +180,51 @@ export async function GET(request: NextRequest, { params }: Params) {
     return NextResponse.json({ error: manageDocsPermissionResult.error.message }, { status: 500 });
   }
 
-  const canEditSource =
-    auth.context.role === "owner" ||
-    Boolean(manageDocsPermissionResult.data) ||
-    !document.source;
+  const canEditSource = auth.context.role === "owner";
+  const canAmendDocument = auth.context.role === "owner";
+
+  let amendedByName: string | null = null;
+  if (document.amended_by) {
+    const amendedByResult = await supabase
+      .from("coders")
+      .select("display_name")
+      .eq("id", document.amended_by)
+      .maybeSingle();
+
+    if (amendedByResult.error) {
+      return NextResponse.json({ error: amendedByResult.error.message }, { status: 500 });
+    }
+
+    amendedByName = amendedByResult.data?.display_name ?? null;
+  }
+
+  const enrichedDocument = {
+    ...document,
+    amended_by_name: amendedByName,
+  };
+
+  const annotatedUsers = [...annotatedByMap.values()];
+
+  const filteredAnnotatedUsers =
+    role === "coder" && !otherCodersVisibleToCoders
+      ? annotatedUsers.filter((user) => user.id === userId)
+      : annotatedUsers;
+
+  const filteredAccessUsers =
+    role === "coder" && !otherCodersVisibleToCoders
+      ? accessUsers.filter((user) => user.id === userId)
+      : accessUsers;
 
   return NextResponse.json({
-    document,
+    document: enrichedDocument,
     projectId,
-    annotatedUsers: [...annotatedByMap.values()],
-    accessUsers,
+    viewerRole: role,
+    otherAnnotationsVisibleToCoders,
+    otherCodersVisibleToCoders,
+    annotatedUsers: filteredAnnotatedUsers,
+    accessUsers: filteredAccessUsers,
     canEditSource,
+    canAmendDocument,
   });
 }
 
@@ -185,16 +238,37 @@ export async function PATCH(request: NextRequest, { params }: Params) {
   const access = await requireDocumentAccess(auth.context, docId);
   if (!access.ok) return access.response;
 
-  if (typeof body.source !== "string" && body.source !== null) {
+  const hasSourceUpdate = Object.prototype.hasOwnProperty.call(body, "source");
+  const hasContentUpdate = Object.prototype.hasOwnProperty.call(body, "content");
+
+  if (!hasSourceUpdate && !hasContentUpdate) {
+    return NextResponse.json(
+      { error: "Provide at least one field to update: source or content." },
+      { status: 400 },
+    );
+  }
+
+  if (hasSourceUpdate && typeof body.source !== "string" && body.source !== null) {
     return NextResponse.json({ error: "source must be a string or null." }, { status: 400 });
   }
 
+  if (hasContentUpdate && typeof body.content !== "string") {
+    return NextResponse.json({ error: "content must be a string." }, { status: 400 });
+  }
+
+  if (
+    Object.prototype.hasOwnProperty.call(body, "amendmentNote") &&
+    typeof body.amendmentNote !== "string" &&
+    body.amendmentNote !== null
+  ) {
+    return NextResponse.json({ error: "amendmentNote must be a string or null." }, { status: 400 });
+  }
+
   const { supabase, projectId, userId, role } = auth.context;
-  const normalizedSource = typeof body.source === "string" ? body.source.trim() || null : null;
 
   const currentDocumentResult = await supabase
     .from("documents")
-    .select("id, source")
+    .select("id, project_id, title, source, content, amended_at, amended_by, amendment_note, created_at")
     .eq("id", docId)
     .eq("project_id", projectId)
     .maybeSingle();
@@ -211,40 +285,96 @@ export async function PATCH(request: NextRequest, { params }: Params) {
     return NextResponse.json({ error: "Document not found." }, { status: 404 });
   }
 
-  const manageDocsPermissionResult = await supabase.rpc("project_has_permission", {
-    target_project: projectId,
-    target_user: userId,
-    requested_permission: "manage_documents",
-  });
-
-  if (manageDocsPermissionResult.error) {
-    if (
-      isMissingRelationError(manageDocsPermissionResult.error) ||
-      isMissingFunctionError(manageDocsPermissionResult.error) ||
-      isAmbiguousFunctionError(manageDocsPermissionResult.error)
-    ) {
-      return schemaNotReadyResponse();
-    }
-
-    return NextResponse.json({ error: manageDocsPermissionResult.error.message }, { status: 500 });
+  if (role !== "owner") {
+    return forbiddenResponse("Only project owners can add/update source or amend document content.");
   }
 
-  const canManageDocuments = role === "owner" || Boolean(manageDocsPermissionResult.data);
-  if (!canManageDocuments && currentDocumentResult.data.source) {
-    return forbiddenResponse("Only document managers can update an existing source.");
+  const updatePayload: Record<string, unknown> = {};
+  if (hasSourceUpdate) {
+    const normalizedSource = typeof body.source === "string" ? body.source.trim() || null : null;
+    updatePayload.source = normalizedSource;
+  }
+
+  if (hasContentUpdate) {
+    const nextContent = body.content as string;
+    const currentContent = currentDocumentResult.data.content;
+    if (nextContent !== currentContent) {
+      updatePayload.content = nextContent;
+      updatePayload.amended_at = new Date().toISOString();
+      updatePayload.amended_by = userId;
+
+      const normalizedNote =
+        typeof body.amendmentNote === "string"
+          ? body.amendmentNote.trim() || null
+          : body.amendmentNote === null
+            ? null
+            : null;
+
+      updatePayload.amendment_note = normalizedNote;
+    }
+  }
+
+  if (Object.keys(updatePayload).length === 0) {
+    let amendedByName: string | null = null;
+    if (currentDocumentResult.data.amended_by) {
+      const amendedByResult = await supabase
+        .from("coders")
+        .select("display_name")
+        .eq("id", currentDocumentResult.data.amended_by)
+        .maybeSingle();
+
+      if (amendedByResult.error) {
+        return NextResponse.json({ error: amendedByResult.error.message }, { status: 500 });
+      }
+
+      amendedByName = amendedByResult.data?.display_name ?? null;
+    }
+
+    return NextResponse.json({
+      document: {
+        ...currentDocumentResult.data,
+        amended_by_name: amendedByName,
+      },
+      projectId,
+      amended: Boolean(currentDocumentResult.data.amended_at),
+      contentChanged: false,
+    });
   }
 
   const updateResult = await supabase
     .from("documents")
-    .update({ source: normalizedSource })
+    .update(updatePayload)
     .eq("id", docId)
     .eq("project_id", projectId)
-    .select("id, project_id, title, source, content, created_at")
+    .select("id, project_id, title, source, content, amended_at, amended_by, amendment_note, created_at")
     .single();
 
   if (updateResult.error) {
     return NextResponse.json({ error: updateResult.error.message }, { status: 500 });
   }
 
-  return NextResponse.json({ document: updateResult.data, projectId });
+  let amendedByName: string | null = null;
+  if (updateResult.data.amended_by) {
+    const amendedByResult = await supabase
+      .from("coders")
+      .select("display_name")
+      .eq("id", updateResult.data.amended_by)
+      .maybeSingle();
+
+    if (amendedByResult.error) {
+      return NextResponse.json({ error: amendedByResult.error.message }, { status: 500 });
+    }
+
+    amendedByName = amendedByResult.data?.display_name ?? null;
+  }
+
+  return NextResponse.json({
+    document: {
+      ...updateResult.data,
+      amended_by_name: amendedByName,
+    },
+    projectId,
+    amended: Boolean(updateResult.data.amended_at),
+    contentChanged: Boolean(updatePayload.content),
+  });
 }

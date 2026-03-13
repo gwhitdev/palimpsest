@@ -23,7 +23,7 @@ export async function GET(request: NextRequest) {
   const auth = await resolveProjectContext(extractProjectId(request), "view_documents");
   if (!auth.ok) return auth.response;
 
-  const { supabase, projectId } = auth.context;
+  const { supabase, projectId, role, userId } = auth.context;
   const documentId = request.nextUrl.searchParams.get("docId");
 
   if (!documentId) {
@@ -33,12 +33,38 @@ export async function GET(request: NextRequest) {
   const access = await requireDocumentAccess(auth.context, documentId);
   if (!access.ok) return access.response;
 
-  const commentsResult = await supabase
+  const visibilityResult = await supabase
+    .from("project_settings")
+    .select("other_comments_visible_to_coders, other_coders_visible_to_coders")
+    .eq("project_id", projectId)
+    .maybeSingle();
+
+  if (visibilityResult.error && !isMissingRelationError(visibilityResult.error)) {
+    return NextResponse.json({ error: visibilityResult.error.message }, { status: 500 });
+  }
+
+  const otherCommentsVisibleToCoders =
+    isMissingRelationError(visibilityResult.error) ||
+    visibilityResult.data?.other_comments_visible_to_coders !== false;
+  const otherCodersVisibleToCoders =
+    isMissingRelationError(visibilityResult.error) ||
+    visibilityResult.data?.other_coders_visible_to_coders !== false;
+
+  const restrictToOwnComments = role === "coder" && !otherCommentsVisibleToCoders;
+  const hideOtherCoderIdentity = role === "coder" && !otherCodersVisibleToCoders;
+
+  let commentsQuery = supabase
     .from("document_comments")
     .select("id, project_id, document_id, parent_id, author_id, author_name, body, quoted_text, start_offset, end_offset, created_at")
     .eq("project_id", projectId)
     .eq("document_id", documentId)
     .order("created_at", { ascending: true });
+
+  if (restrictToOwnComments) {
+    commentsQuery = commentsQuery.eq("author_id", userId);
+  }
+
+  const commentsResult = await commentsQuery;
 
   if (isMissingRelationError(commentsResult.error)) {
     return NextResponse.json(
@@ -55,7 +81,18 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: commentsResult.error.message }, { status: 500 });
   }
 
-  return NextResponse.json({ comments: commentsResult.data ?? [], projectId, documentId });
+  const comments = (commentsResult.data ?? []).map((comment) => {
+    if (!hideOtherCoderIdentity || comment.author_id === userId) {
+      return comment;
+    }
+
+    return {
+      ...comment,
+      author_name: "Another coder",
+    };
+  });
+
+  return NextResponse.json({ comments, projectId, documentId });
 }
 
 export async function POST(request: NextRequest) {

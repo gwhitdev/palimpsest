@@ -9,6 +9,7 @@ type Props = {
   content: string;
   annotations: Annotation[];
   onAnnotate: (techId: string, text: string, start: number, end: number) => void;
+  onSelectAnnotation: (annotationId: string) => void;
   onRemove: (id: string) => void;
   currentUserId?: string | null;
 };
@@ -22,7 +23,13 @@ function escapeHtml(input: string): string {
     .replaceAll("'", "&#39;");
 }
 
-export default function TextAnnotator({ content, annotations, onRemove, currentUserId }: Props) {
+export default function TextAnnotator({
+  content,
+  annotations,
+  onSelectAnnotation,
+  onRemove,
+  currentUserId,
+}: Props) {
   const { hoveredAnnotationId, setHoveredAnnotationId } = useAnnotationStore();
 
   const html = useMemo(() => {
@@ -59,6 +66,14 @@ export default function TextAnnotator({ content, annotations, onRemove, currentU
     if (removeId) {
       event.preventDefault();
       onRemove(removeId);
+      return;
+    }
+
+    const mark = getMarkFromTarget(target);
+    const annotationId = mark?.dataset.id;
+    if (annotationId) {
+      event.preventDefault();
+      onSelectAnnotation(annotationId);
     }
   };
 

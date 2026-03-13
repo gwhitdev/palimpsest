@@ -6,9 +6,17 @@ create extension if not exists "uuid-ossp";
 create table if not exists public.project_settings (
   project_id uuid primary key references public.projects(id) on delete cascade,
   stats_visible_to_coders boolean not null default true,
+  other_coders_visible_to_coders boolean not null default true,
+  other_annotations_visible_to_coders boolean not null default true,
+  other_comments_visible_to_coders boolean not null default true,
   updated_by uuid references auth.users(id) on delete set null,
   updated_at timestamptz not null default now()
 );
+
+alter table if exists public.project_settings
+  add column if not exists other_coders_visible_to_coders boolean not null default true,
+  add column if not exists other_annotations_visible_to_coders boolean not null default true,
+  add column if not exists other_comments_visible_to_coders boolean not null default true;
 
 alter table public.project_settings enable row level security;
 

@@ -12,6 +12,7 @@ type QuoteDraft = {
 type Props = {
   comments: DocumentComment[];
   isOpen: boolean;
+  showLaunchButton?: boolean;
   pendingQuote: QuoteDraft | null;
   onOpen: () => void;
   onClose: () => void;
@@ -23,6 +24,7 @@ type Props = {
 export default function CommentsDrawer({
   comments,
   isOpen,
+  showLaunchButton = true,
   pendingQuote,
   onOpen,
   onClose,
@@ -93,7 +95,7 @@ export default function CommentsDrawer({
 
   return (
     <>
-      {!isOpen && (
+      {showLaunchButton && !isOpen && (
         <button
           className="absolute right-3 top-14 z-30 rounded-md border border-gray-300 bg-white px-3 py-2 text-xs font-medium text-gray-900"
           onClick={onOpen}

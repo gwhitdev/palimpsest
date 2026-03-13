@@ -17,6 +17,10 @@ export interface Document {
   title: string;
   source: string | null;
   content: string;
+  amended_at?: string | null;
+  amended_by?: string | null;
+  amended_by_name?: string | null;
+  amendment_note?: string | null;
   created_at: string;
 }
 
@@ -46,6 +50,18 @@ export interface Annotation {
   is_ai: boolean;
   accepted: boolean;
   created_at: string;
+}
+
+export interface AnnotationCodeChange {
+  id: string;
+  annotation_id: string;
+  project_id: string;
+  document_id: string;
+  changed_by: string;
+  changed_by_name: string;
+  previous_tech_id: string;
+  next_tech_id: string;
+  changed_at: string;
 }
 
 export interface AnnotatorUser {

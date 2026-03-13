@@ -1,6 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { NextRequest, NextResponse } from "next/server";
-import { extractProjectId, resolveProjectContext } from "@/lib/server/projectAuth";
+import { extractProjectId, forbiddenResponse, resolveProjectContext } from "@/lib/server/projectAuth";
 import { TAXONOMY } from "@/lib/taxonomy";
 
 type AnthropicErrorLike = {
@@ -49,6 +49,9 @@ export async function POST(request: NextRequest) {
 
     const auth = await resolveProjectContext(extractProjectId(request, body), "annotate");
     if (!auth.ok) return auth.response;
+    if (auth.context.role !== "owner") {
+      return forbiddenResponse("Only project owners can generate AI suggestions.");
+    }
 
     const { text, documentId } = body;
 

@@ -37,6 +37,15 @@ type StatsApiResponse = {
   error?: string;
 };
 
+const SOFT_MIN_SAMPLE = {
+  minRaters: 2,
+  preferredRaters: 3,
+  minAnnotations: 50,
+  preferredAnnotations: 100,
+  minDocuments: 2,
+  minPerCategory: 5,
+} as const;
+
 export default function StatsPage() {
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
   const [projectId, setProjectId] = useState<string | null>(null);
@@ -147,6 +156,58 @@ export default function StatsPage() {
       .sort((a, b) => b.count - a.count);
   }, [annotations]);
 
+  const sampleQuality = useMemo(() => {
+    const raterCount = new Set(annotations.map((annotation) => annotation.coder_id)).size;
+    const documentCount = new Set(annotations.map((annotation) => annotation.document_id)).size;
+    const annotationCount = annotations.length;
+
+    const lowSupportCategories = frequency
+      .filter((entry) => entry.count < SOFT_MIN_SAMPLE.minPerCategory)
+      .map((entry) => entry.techId);
+
+    const warnings: string[] = [];
+
+    if (raterCount < SOFT_MIN_SAMPLE.minRaters) {
+      warnings.push(
+        `Only ${raterCount} rater is represented. Agreement metrics are unstable below ${SOFT_MIN_SAMPLE.minRaters} raters.`,
+      );
+    } else if (raterCount < SOFT_MIN_SAMPLE.preferredRaters) {
+      warnings.push(
+        `${raterCount} raters found. Reliability improves with ${SOFT_MIN_SAMPLE.preferredRaters}+ raters.`,
+      );
+    }
+
+    if (annotationCount < SOFT_MIN_SAMPLE.minAnnotations) {
+      warnings.push(
+        `${annotationCount} total annotations is below the soft minimum of ${SOFT_MIN_SAMPLE.minAnnotations}.`,
+      );
+    } else if (annotationCount < SOFT_MIN_SAMPLE.preferredAnnotations) {
+      warnings.push(
+        `${annotationCount} annotations loaded; target ${SOFT_MIN_SAMPLE.preferredAnnotations}+ for steadier kappa estimates.`,
+      );
+    }
+
+    if (documentCount < SOFT_MIN_SAMPLE.minDocuments) {
+      warnings.push(
+        `${documentCount} document contributes data. Use at least ${SOFT_MIN_SAMPLE.minDocuments} documents to reduce document-specific bias.`,
+      );
+    }
+
+    if (lowSupportCategories.length > 0) {
+      warnings.push(
+        `Low-frequency technique labels (<${SOFT_MIN_SAMPLE.minPerCategory} examples): ${lowSupportCategories.join(", ")}.`,
+      );
+    }
+
+    return {
+      raterCount,
+      documentCount,
+      annotationCount,
+      warnings,
+      shouldWarn: warnings.length > 0,
+    };
+  }, [annotations, frequency]);
+
   return (
     <main className="mx-auto max-w-6xl space-y-4 px-6 py-8">
       <h1 className="text-2xl font-semibold">Project Statistics</h1>
@@ -197,6 +258,20 @@ export default function StatsPage() {
 
       {!loading && projectId && canViewStats && (
         <>
+          {sampleQuality.shouldWarn && (
+            <section className="rounded-md border border-amber-300 bg-amber-50 px-3 py-3 text-sm text-amber-900">
+              <p className="font-semibold">Soft minimum-sample warning</p>
+              <p className="mt-1 text-xs">
+                Current sample: {sampleQuality.raterCount} raters, {sampleQuality.documentCount} documents, {sampleQuality.annotationCount} annotations.
+              </p>
+              <ul className="mt-2 list-disc space-y-1 pl-5 text-xs">
+                {sampleQuality.warnings.map((warning) => (
+                  <li key={warning}>{warning}</li>
+                ))}
+              </ul>
+            </section>
+          )}
+
           <KappaDisplay kappa={kappa} />
           <FrequencyChart data={frequency} />
           <a

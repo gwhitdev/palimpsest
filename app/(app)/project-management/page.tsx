@@ -68,6 +68,9 @@ type AssignmentDrafts = Record<string, string[]>;
 
 type StatsVisibilityResponse = {
   statsVisibleToCoders?: boolean;
+  otherCodersVisibleToCoders?: boolean;
+  otherAnnotationsVisibleToCoders?: boolean;
+  otherCommentsVisibleToCoders?: boolean;
   canViewStats?: boolean;
   canManageStatsVisibility?: boolean;
   setupRequired?: boolean;
@@ -114,6 +117,9 @@ export default function ProjectManagementPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [activePanel, setActivePanel] = useState<ManagementPanel>("documents");
   const [statsVisibleToCoders, setStatsVisibleToCoders] = useState(true);
+  const [otherCodersVisibleToCoders, setOtherCodersVisibleToCoders] = useState(true);
+  const [otherAnnotationsVisibleToCoders, setOtherAnnotationsVisibleToCoders] = useState(true);
+  const [otherCommentsVisibleToCoders, setOtherCommentsVisibleToCoders] = useState(true);
   const [canViewStats, setCanViewStats] = useState(false);
   const [canManageStatsVisibility, setCanManageStatsVisibility] = useState(false);
 
@@ -199,6 +205,11 @@ export default function ProjectManagementPage() {
           }
 
           setStatsVisibleToCoders(statsVisibilityJson.statsVisibleToCoders !== false);
+          setOtherCodersVisibleToCoders(statsVisibilityJson.otherCodersVisibleToCoders !== false);
+          setOtherAnnotationsVisibleToCoders(
+            statsVisibilityJson.otherAnnotationsVisibleToCoders !== false,
+          );
+          setOtherCommentsVisibleToCoders(statsVisibilityJson.otherCommentsVisibleToCoders !== false);
           setCanViewStats(Boolean(statsVisibilityJson.canViewStats));
           setCanManageStatsVisibility(Boolean(statsVisibilityJson.canManageStatsVisibility));
 
@@ -272,9 +283,12 @@ export default function ProjectManagementPage() {
           setMemberRoleDrafts({});
           setMemberGrantDrafts({});
           setMemberDenyDrafts({});
+          setStatsVisibleToCoders(true);
+          setOtherCodersVisibleToCoders(true);
+          setOtherAnnotationsVisibleToCoders(true);
+          setOtherCommentsVisibleToCoders(true);
           setCanViewStats(false);
           setCanManageStatsVisibility(false);
-          setStatsVisibleToCoders(true);
         }
       } else {
         const noProjectMembership =
@@ -296,9 +310,12 @@ export default function ProjectManagementPage() {
         setMemberRoleDrafts({});
         setMemberGrantDrafts({});
         setMemberDenyDrafts({});
+        setStatsVisibleToCoders(true);
+        setOtherCodersVisibleToCoders(true);
+        setOtherAnnotationsVisibleToCoders(true);
+        setOtherCommentsVisibleToCoders(true);
         setCanViewStats(false);
         setCanManageStatsVisibility(false);
-        setStatsVisibleToCoders(true);
       }
 
       const pendingResponse = await fetch("/api/projects/invites/pending", { cache: "no-store" });
@@ -536,7 +553,15 @@ export default function ProjectManagementPage() {
     }
   };
 
-  const handleToggleStatsVisibility = async (nextVisible: boolean) => {
+  const handleUpdateVisibilitySettings = async (
+    patch: Pick<
+      StatsVisibilityResponse,
+      | "statsVisibleToCoders"
+      | "otherCodersVisibleToCoders"
+      | "otherAnnotationsVisibleToCoders"
+      | "otherCommentsVisibleToCoders"
+    >,
+  ) => {
     if (!projectId || !canManageStatsVisibility) return;
 
     setSavingStatsVisibility(true);
@@ -548,7 +573,7 @@ export default function ProjectManagementPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           projectId,
-          statsVisibleToCoders: nextVisible,
+          ...patch,
         }),
       });
 
@@ -558,6 +583,9 @@ export default function ProjectManagementPage() {
       }
 
       setStatsVisibleToCoders(payload.statsVisibleToCoders !== false);
+      setOtherCodersVisibleToCoders(payload.otherCodersVisibleToCoders !== false);
+      setOtherAnnotationsVisibleToCoders(payload.otherAnnotationsVisibleToCoders !== false);
+      setOtherCommentsVisibleToCoders(payload.otherCommentsVisibleToCoders !== false);
       setCanViewStats(Boolean(payload.canViewStats));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to update stats visibility.");
@@ -663,9 +691,9 @@ export default function ProjectManagementPage() {
 
       {projectId && (
         <section className="mt-4 rounded-xl border border-gray-200 bg-white p-4">
-          <h2 className="text-sm font-semibold">Project Statistics Access</h2>
+            <h2 className="text-sm font-semibold">Project Visibility Controls</h2>
           <p className="mt-1 text-xs text-gray-600">
-            Stats are scoped to the selected project.
+              Configure what coders can see in this project. Owners always see everything.
           </p>
 
           <div className="mt-3 flex flex-wrap items-center gap-3">
@@ -685,13 +713,63 @@ export default function ProjectManagementPage() {
                 <input
                   checked={statsVisibleToCoders}
                   disabled={savingStatsVisibility}
-                  onChange={(event) => void handleToggleStatsVisibility(event.target.checked)}
+                  onChange={(event) =>
+                    void handleUpdateVisibilitySettings({
+                      statsVisibleToCoders: event.target.checked,
+                    })
+                  }
                   type="checkbox"
                 />
                 Visible to coders
               </label>
             )}
           </div>
+
+          {canManageStatsVisibility && (
+            <div className="mt-3 grid gap-2 sm:grid-cols-2">
+              <label className="flex items-center gap-2 rounded-md border border-gray-300 px-3 py-2 text-xs text-gray-800">
+                <input
+                  checked={otherCodersVisibleToCoders}
+                  disabled={savingStatsVisibility}
+                  onChange={(event) =>
+                    void handleUpdateVisibilitySettings({
+                      otherCodersVisibleToCoders: event.target.checked,
+                    })
+                  }
+                  type="checkbox"
+                />
+                Show other coder identities
+              </label>
+
+              <label className="flex items-center gap-2 rounded-md border border-gray-300 px-3 py-2 text-xs text-gray-800">
+                <input
+                  checked={otherAnnotationsVisibleToCoders}
+                  disabled={savingStatsVisibility}
+                  onChange={(event) =>
+                    void handleUpdateVisibilitySettings({
+                      otherAnnotationsVisibleToCoders: event.target.checked,
+                    })
+                  }
+                  type="checkbox"
+                />
+                Show other coders' annotations
+              </label>
+
+              <label className="flex items-center gap-2 rounded-md border border-gray-300 px-3 py-2 text-xs text-gray-800 sm:col-span-2">
+                <input
+                  checked={otherCommentsVisibleToCoders}
+                  disabled={savingStatsVisibility}
+                  onChange={(event) =>
+                    void handleUpdateVisibilitySettings({
+                      otherCommentsVisibleToCoders: event.target.checked,
+                    })
+                  }
+                  type="checkbox"
+                />
+                Show other coders' comments
+              </label>
+            </div>
+          )}
         </section>
       )}
 
