@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { TAXONOMY } from "@/lib/taxonomy";
 import {
   groupTechniquesByLevel,
@@ -20,7 +20,43 @@ type Props = {
 export default function SelectionPopup({ position, selectedText, onSelect, onComment, onDismiss }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const [selectedTechIds, setSelectedTechIds] = useState<string[]>([]);
+  const [popupCoords, setPopupCoords] = useState<{ left: number; top: number } | null>(null);
   const techniquesByLevel = useMemo(() => groupTechniquesByLevel(TAXONOMY), []);
+
+  useLayoutEffect(() => {
+    if (!position) {
+      setPopupCoords(null);
+      return;
+    }
+
+    const popup = ref.current;
+    if (!popup) {
+      setPopupCoords({ left: position.x, top: position.y });
+      return;
+    }
+
+    const margin = 12;
+    const gap = 8;
+    const popupWidth = popup.offsetWidth;
+    const popupHeight = popup.offsetHeight;
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+
+    let left = position.x;
+    let top = position.y;
+
+    if (left + popupWidth + margin > viewportWidth) {
+      left = viewportWidth - popupWidth - margin;
+    }
+    left = Math.max(margin, left);
+
+    if (top + popupHeight + margin > viewportHeight) {
+      top = position.y - popupHeight - gap;
+    }
+    top = Math.max(margin, top);
+
+    setPopupCoords({ left, top });
+  }, [position, selectedText]);
 
   useEffect(() => {
     if (!position) {
@@ -62,8 +98,8 @@ export default function SelectionPopup({ position, selectedText, onSelect, onCom
   return (
     <div
       ref={ref}
-      className="fixed z-50 w-80 max-w-sm rounded-xl border border-gray-200 bg-white p-3 shadow-lg"
-      style={{ left: position.x, top: position.y }}
+      className="fixed z-50 w-80 max-w-sm max-h-[calc(100vh-24px)] overflow-y-auto rounded-xl border border-gray-200 bg-white p-3 shadow-lg"
+      style={{ left: popupCoords?.left ?? position.x, top: popupCoords?.top ?? position.y }}
     >
       <p className="mb-1 text-xs font-medium text-gray-500">Assign technique to selection</p>
       <p className="mb-2 line-clamp-2 text-xs text-gray-700">&quot;{selectedText}&quot;</p>

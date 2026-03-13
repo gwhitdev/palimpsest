@@ -27,15 +27,6 @@ type ProjectApiResponse = {
   error?: string;
 };
 
-type CreateProjectResponse = {
-  project?: {
-    id: string;
-    name: string;
-    status?: ProjectStatus;
-  };
-  error?: string;
-};
-
 type UpdateProjectResponse = {
   project?: {
     id: string;
@@ -52,14 +43,6 @@ type DeleteProjectResponse = {
   nextProjectId?: string | null;
   projects?: ProjectSummary[];
   error?: string;
-};
-
-type PendingInvite = {
-  id: string;
-  token: string;
-  role: ProjectRole;
-  expires_at: string;
-  projects?: { name: string | null } | null;
 };
 
 type DocumentApiResponse = {
@@ -108,11 +91,23 @@ const defaultRoleByMember = (coders: Coder[]) => {
 };
 
 const defaultPermissionsDraft = (coders: Coder[], key: "grantPermissions" | "denyPermissions") => {
-  return coders.reduce<Record<string, string>>((acc, coder) => {
-    acc[coder.id] = (coder[key] ?? []).join(",");
+  return coders.reduce<Record<string, string[]>>((acc, coder) => {
+    acc[coder.id] = [...(coder[key] ?? [])];
     return acc;
   }, {});
 };
+
+const PROJECT_PERMISSION_OPTIONS: Array<{ key: string; label: string }> = [
+  { key: "manage_project", label: "Manage project lifecycle" },
+  { key: "manage_members", label: "Manage members" },
+  { key: "manage_permissions", label: "Manage permission overrides" },
+  { key: "invite_members", label: "Invite members" },
+  { key: "manage_documents", label: "Manage documents" },
+  { key: "view_documents", label: "View documents" },
+  { key: "annotate", label: "Annotate" },
+  { key: "view_stats", label: "View stats" },
+  { key: "export_data", label: "Export data" },
+];
 
 const parsePermissionInput = (value: string): string[] => {
   return [...new Set(value.split(",").map((entry) => entry.trim()).filter(Boolean))];
@@ -123,14 +118,13 @@ export default function ProjectManagementPage() {
   const [projectId, setProjectId] = useState<string | null>(null);
   const [projectName, setProjectName] = useState<string>("Project");
   const [projectStatus, setProjectStatus] = useState<ProjectStatus>("active");
-  const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [documents, setDocuments] = useState<DocumentWithAssignments[]>([]);
   const [coders, setCoders] = useState<Coder[]>([]);
   const [ownerInvites, setOwnerInvites] = useState<Invite[]>([]);
   const [assignmentDrafts, setAssignmentDrafts] = useState<AssignmentDrafts>({});
   const [memberRoleDrafts, setMemberRoleDrafts] = useState<Record<string, ProjectRole>>({});
-  const [memberGrantDrafts, setMemberGrantDrafts] = useState<Record<string, string>>({});
-  const [memberDenyDrafts, setMemberDenyDrafts] = useState<Record<string, string>>({});
+  const [memberGrantDrafts, setMemberGrantDrafts] = useState<Record<string, string[]>>({});
+  const [memberDenyDrafts, setMemberDenyDrafts] = useState<Record<string, string[]>>({});
   const [loading, setLoading] = useState(true);
   const [busyDocId, setBusyDocId] = useState<string | null>(null);
   const [busyMemberId, setBusyMemberId] = useState<string | null>(null);
@@ -154,8 +148,6 @@ export default function ProjectManagementPage() {
   const [inviteRole, setInviteRole] = useState<ProjectRole>("coder");
   const [inviteGrantInput, setInviteGrantInput] = useState("");
   const [inviteDenyInput, setInviteDenyInput] = useState("");
-  const [pendingInvites, setPendingInvites] = useState<PendingInvite[]>([]);
-  const [newProjectName, setNewProjectName] = useState("");
   const [busyAction, setBusyAction] = useState<string | null>(null);
 
   const coderNameMap = useMemo(() => {
@@ -172,6 +164,25 @@ export default function ProjectManagementPage() {
   const toggleCoderSelection = (list: string[], coderId: string, checked: boolean): string[] => {
     if (checked) return [...new Set([...list, coderId])];
     return list.filter((id) => id !== coderId);
+  };
+
+  const togglePermissionDraft = (
+    current: Record<string, string[]>,
+    memberId: string,
+    permission: string,
+    checked: boolean,
+  ) => {
+    const nextValues = new Set(current[memberId] ?? []);
+    if (checked) {
+      nextValues.add(permission);
+    } else {
+      nextValues.delete(permission);
+    }
+
+    return {
+      ...current,
+      [memberId]: [...nextValues],
+    };
   };
 
   const loadProjectManagement = useCallback(async (preferredProjectId?: string) => {
@@ -201,8 +212,6 @@ export default function ProjectManagementPage() {
       if (projectResponse.ok) {
         const currentProjectId = projectJson.currentProjectId;
         const currentRole = projectJson.currentRole;
-
-        setProjects(projectJson.projects ?? []);
 
         if (currentProjectId && currentRole) {
           setRole(currentRole);
@@ -328,7 +337,6 @@ export default function ProjectManagementPage() {
         setProjectId(null);
         setProjectName("No active project");
         setProjectStatus("active");
-        setProjects([]);
         setDocuments([]);
         setCoders([]);
         setOwnerInvites([]);
@@ -342,12 +350,6 @@ export default function ProjectManagementPage() {
         setOtherCommentsVisibleToCoders(true);
         setCanViewStats(false);
         setCanManageStatsVisibility(false);
-      }
-
-      const pendingResponse = await fetch("/api/projects/invites/pending", { cache: "no-store" });
-      const pendingJson = await parseResponseJson<{ invites?: PendingInvite[] }>(pendingResponse, {});
-      if (pendingResponse.ok) {
-        setPendingInvites(pendingJson.invites ?? []);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load project management.");
@@ -505,8 +507,8 @@ export default function ProjectManagementPage() {
           projectId,
           userId: memberId,
           role: memberRoleDrafts[memberId],
-          grantPermissions: parsePermissionInput(memberGrantDrafts[memberId] ?? ""),
-          denyPermissions: parsePermissionInput(memberDenyDrafts[memberId] ?? ""),
+          grantPermissions: memberGrantDrafts[memberId] ?? [],
+          denyPermissions: memberDenyDrafts[memberId] ?? [],
         }),
       });
 
@@ -523,30 +525,42 @@ export default function ProjectManagementPage() {
     }
   };
 
-  const handleCreateProject = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    setBusyAction("create");
+  const handleRevokeInvite = async (inviteId: string) => {
+    if (!projectId) return;
+
+    setBusyInviteId(inviteId);
     setError(null);
 
     try {
-      const response = await fetch("/api/projects", {
-        method: "POST",
+      const response = await fetch("/api/projects/invites", {
+        method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: newProjectName }),
+        body: JSON.stringify({
+          projectId,
+          inviteId,
+          action: "revoke",
+        }),
       });
 
-      const payload = await parseResponseJson<CreateProjectResponse>(response, {});
-      if (!response.ok || !payload.project) {
-        throw new Error(payload.error ?? "Failed to create project.");
+      const payload = await parseResponseJson<{ error?: string }>(response, {});
+      if (!response.ok) {
+        throw new Error(payload.error ?? "Failed to revoke invite.");
       }
 
-      setNewProjectName("");
-      setActiveProjectId(payload.project.id);
-      await loadProjectManagement(payload.project.id);
+      setOwnerInvites((current) =>
+        current.map((invite) =>
+          invite.id === inviteId
+            ? {
+                ...invite,
+                status: "revoked",
+              }
+            : invite,
+        ),
+      );
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create project.");
+      setError(err instanceof Error ? err.message : "Failed to revoke invite.");
     } finally {
-      setBusyAction(null);
+      setBusyInviteId(null);
     }
   };
 
@@ -625,35 +639,6 @@ export default function ProjectManagementPage() {
     }
   };
 
-  const handleAcceptInvite = async (token: string) => {
-    setBusyAction(token);
-    setError(null);
-
-    try {
-      const response = await fetch("/api/projects/invites/accept", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token }),
-      });
-
-      const payload = await parseResponseJson<{ error?: string; projectId?: string }>(response, {});
-      if (!response.ok) {
-        throw new Error(payload.error ?? "Failed to accept invite.");
-      }
-
-      const nextProjectId = payload.projectId ?? undefined;
-      if (nextProjectId) {
-        setActiveProjectId(nextProjectId);
-      }
-
-      await loadProjectManagement(nextProjectId);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to accept invite.");
-    } finally {
-      setBusyAction(null);
-    }
-  };
-
   const handleUpdateVisibilitySettings = async (
     patch: Pick<
       StatsVisibilityResponse,
@@ -724,77 +709,6 @@ export default function ProjectManagementPage() {
           <p className="mt-1 text-xs text-gray-500">Current project: {projectName}</p>
         </div>
       </div>
-
-      <section className="mt-6 rounded-xl border border-gray-200 bg-white p-4">
-        <h2 className="text-sm font-semibold">Project Access</h2>
-        <p className="mt-1 text-xs text-gray-600">Create a project or accept an invite to start managing work.</p>
-
-        <form className="mt-3 flex flex-col gap-2 sm:flex-row" onSubmit={handleCreateProject}>
-          <input
-            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
-            onChange={(event) => setNewProjectName(event.target.value)}
-            placeholder="New project name"
-            required
-            value={newProjectName}
-          />
-          <button
-            className="rounded-md bg-gray-900 px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
-            disabled={busyAction === "create"}
-            type="submit"
-          >
-            {busyAction === "create" ? "Creating..." : "Create Project"}
-          </button>
-        </form>
-
-        {pendingInvites.length > 0 && (
-          <div className="mt-4 rounded-md border border-sky-200 bg-sky-50 p-3">
-            <p className="text-xs font-semibold text-sky-900">Pending Invitations</p>
-            <ul className="mt-2 space-y-2">
-              {pendingInvites.map((invite) => (
-                <li key={invite.id} className="rounded-md border border-sky-100 bg-white p-2">
-                  <p className="text-xs font-medium text-sky-900">
-                    {invite.projects?.name ?? "Project"} ({invite.role})
-                  </p>
-                  <p className="text-xs text-sky-700">Expires: {new Date(invite.expires_at).toLocaleString()}</p>
-                  <button
-                    className="mt-2 rounded-md bg-sky-700 px-2 py-1 text-xs font-medium text-white disabled:opacity-50"
-                    disabled={busyAction === invite.token}
-                    onClick={() => void handleAcceptInvite(invite.token)}
-                    type="button"
-                  >
-                    {busyAction === invite.token ? "Accepting..." : "Accept Invite"}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-      </section>
-
-      {projects.length > 0 && (
-        <div className="mt-4 max-w-md">
-          <label className="text-xs font-medium text-gray-700" htmlFor="project-management-select">
-            Switch project
-          </label>
-          <select
-            className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
-            id="project-management-select"
-            onChange={(event) => {
-              const nextProjectId = event.target.value;
-              setProjectId(nextProjectId);
-              setActiveProjectId(nextProjectId);
-              void loadProjectManagement(nextProjectId);
-            }}
-            value={projectId ?? ""}
-          >
-            {projects.map((project) => (
-              <option key={project.id} value={project.id}>
-                {project.name} ({project.role}, {project.status})
-              </option>
-            ))}
-          </select>
-        </div>
-      )}
 
       {projectId && role === "owner" && (
         <section className="mt-4 rounded-xl border border-gray-200 bg-white p-4">
@@ -1042,6 +956,16 @@ export default function ProjectManagementPage() {
                     {invite.email} - {invite.role} ({invite.status})
                   </p>
                   <p className="mt-1 break-all text-xs text-gray-600">Token: {invite.token}</p>
+                  {invite.status === "pending" && (
+                    <button
+                      className="mt-2 rounded-md border border-red-300 bg-red-50 px-2 py-1 text-xs font-medium text-red-700 disabled:opacity-50"
+                      disabled={busyInviteId === invite.id}
+                      onClick={() => void handleRevokeInvite(invite.id)}
+                      type="button"
+                    >
+                      {busyInviteId === invite.id ? "Revoking..." : "Revoke Invite"}
+                    </button>
+                  )}
                 </li>
               ))}
             </ul>
@@ -1053,7 +977,7 @@ export default function ProjectManagementPage() {
         <section className="mt-6 rounded-xl border border-gray-200 bg-white p-4">
           <h2 className="text-sm font-semibold">Members</h2>
           <p className="mt-1 text-xs text-gray-600">
-            Update role and discretionary permission overrides (comma-separated permission keys).
+            Update role and discretionary permission overrides with explicit allow/deny toggles.
           </p>
           <ul className="mt-3 space-y-2">
             {coders.map((coder) => (
@@ -1061,7 +985,7 @@ export default function ProjectManagementPage() {
                 <p className="text-sm font-medium">{coder.display_name}</p>
                 <p className="text-xs text-gray-600">{coder.id}</p>
 
-                <div className="mt-2 grid gap-2 md:grid-cols-3">
+                <div className="mt-2 grid gap-2 md:grid-cols-1">
                   <select
                     className="rounded-md border border-gray-300 px-2 py-2 text-xs"
                     onChange={(event) =>
@@ -1076,23 +1000,61 @@ export default function ProjectManagementPage() {
                     <option value="coder">Coder</option>
                   </select>
 
-                  <input
-                    className="rounded-md border border-gray-300 px-2 py-2 text-xs"
-                    onChange={(event) =>
-                      setMemberGrantDrafts((current) => ({ ...current, [coder.id]: event.target.value }))
-                    }
-                    placeholder="Allow permissions"
-                    value={memberGrantDrafts[coder.id] ?? ""}
-                  />
+                  <div className="grid gap-2 md:grid-cols-2">
+                    <div className="rounded-md border border-emerald-200 bg-emerald-50 p-2">
+                      <p className="mb-1 text-xs font-semibold text-emerald-800">Allow</p>
+                      <div className="grid gap-1">
+                        {PROJECT_PERMISSION_OPTIONS.map((permission) => (
+                          <label key={`${coder.id}-allow-${permission.key}`} className="flex items-center gap-2 text-xs text-emerald-900">
+                            <input
+                              checked={(memberGrantDrafts[coder.id] ?? []).includes(permission.key)}
+                              onChange={(event) => {
+                                const checked = event.target.checked;
+                                setMemberGrantDrafts((current) =>
+                                  togglePermissionDraft(current, coder.id, permission.key, checked),
+                                );
 
-                  <input
-                    className="rounded-md border border-gray-300 px-2 py-2 text-xs"
-                    onChange={(event) =>
-                      setMemberDenyDrafts((current) => ({ ...current, [coder.id]: event.target.value }))
-                    }
-                    placeholder="Deny permissions"
-                    value={memberDenyDrafts[coder.id] ?? ""}
-                  />
+                                if (checked) {
+                                  setMemberDenyDrafts((current) =>
+                                    togglePermissionDraft(current, coder.id, permission.key, false),
+                                  );
+                                }
+                              }}
+                              type="checkbox"
+                            />
+                            {permission.label}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="rounded-md border border-rose-200 bg-rose-50 p-2">
+                      <p className="mb-1 text-xs font-semibold text-rose-800">Deny</p>
+                      <div className="grid gap-1">
+                        {PROJECT_PERMISSION_OPTIONS.map((permission) => (
+                          <label key={`${coder.id}-deny-${permission.key}`} className="flex items-center gap-2 text-xs text-rose-900">
+                            <input
+                              checked={(memberDenyDrafts[coder.id] ?? []).includes(permission.key)}
+                              onChange={(event) => {
+                                const checked = event.target.checked;
+                                setMemberDenyDrafts((current) =>
+                                  togglePermissionDraft(current, coder.id, permission.key, checked),
+                                );
+
+                                if (checked) {
+                                  setMemberGrantDrafts((current) =>
+                                    togglePermissionDraft(current, coder.id, permission.key, false),
+                                  );
+                                }
+                              }}
+                              type="checkbox"
+                            />
+                            {permission.label}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
                 </div>
 
                 <button

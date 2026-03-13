@@ -15,6 +15,12 @@ type InviteBody = {
   expiresInDays?: number;
 };
 
+type UpdateInviteBody = {
+  projectId?: string;
+  inviteId?: string;
+  action?: "revoke";
+};
+
 const normalizePermissions = (values: string[] | undefined): ProjectPermission[] => {
   return [...new Set((values ?? []).map((value) => value.trim()).filter(Boolean))].filter(isProjectPermission);
 };
@@ -92,4 +98,39 @@ export async function POST(request: NextRequest) {
   }
 
   return NextResponse.json({ invite: inviteInsert.data, projectId });
+}
+
+export async function PATCH(request: NextRequest) {
+  const body = (await request.json()) as UpdateInviteBody;
+  const auth = await resolveProjectContext(extractProjectId(request, body), "invite_members");
+  if (!auth.ok) return auth.response;
+
+  const { supabase, projectId } = auth.context;
+
+  if (!body.inviteId) {
+    return NextResponse.json({ error: "inviteId is required." }, { status: 400 });
+  }
+
+  if (body.action !== "revoke") {
+    return NextResponse.json({ error: "action must be revoke." }, { status: 400 });
+  }
+
+  const updateResult = await supabase
+    .from("project_invites")
+    .update({ status: "revoked" })
+    .eq("id", body.inviteId)
+    .eq("project_id", projectId)
+    .eq("status", "pending")
+    .select("id")
+    .maybeSingle();
+
+  if (updateResult.error) {
+    return NextResponse.json({ error: updateResult.error.message }, { status: 500 });
+  }
+
+  if (!updateResult.data) {
+    return NextResponse.json({ error: "Pending invite not found." }, { status: 404 });
+  }
+
+  return NextResponse.json({ success: true, inviteId: body.inviteId, projectId });
 }
