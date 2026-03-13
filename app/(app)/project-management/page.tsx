@@ -66,6 +66,15 @@ type Invite = {
 
 type AssignmentDrafts = Record<string, string[]>;
 
+type StatsVisibilityResponse = {
+  statsVisibleToCoders?: boolean;
+  canViewStats?: boolean;
+  canManageStatsVisibility?: boolean;
+  setupRequired?: boolean;
+  setupHint?: string;
+  error?: string;
+};
+
 const defaultRoleByMember = (coders: Coder[]) => {
   return coders.reduce<Record<string, ProjectRole>>((acc, coder) => {
     acc[coder.id] = coder.role;
@@ -100,9 +109,13 @@ export default function ProjectManagementPage() {
   const [busyDocId, setBusyDocId] = useState<string | null>(null);
   const [busyMemberId, setBusyMemberId] = useState<string | null>(null);
   const [busyInviteId, setBusyInviteId] = useState<string | null>(null);
+  const [savingStatsVisibility, setSavingStatsVisibility] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [activePanel, setActivePanel] = useState<ManagementPanel>("documents");
+  const [statsVisibleToCoders, setStatsVisibleToCoders] = useState(true);
+  const [canViewStats, setCanViewStats] = useState(false);
+  const [canManageStatsVisibility, setCanManageStatsVisibility] = useState(false);
 
   const [title, setTitle] = useState("");
   const [source, setSource] = useState("");
@@ -170,6 +183,29 @@ export default function ProjectManagementPage() {
           const currentProject = (projectJson.projects ?? []).find((project) => project.id === currentProjectId);
           setProjectName(currentProject?.name ?? "Project");
 
+          const statsVisibilityResponse = await fetch(
+            withProjectQuery("/api/projects/stats-visibility", currentProjectId),
+            {
+              cache: "no-store",
+            },
+          );
+          const statsVisibilityJson = await parseResponseJson<StatsVisibilityResponse>(
+            statsVisibilityResponse,
+            {},
+          );
+
+          if (!statsVisibilityResponse.ok) {
+            throw new Error(statsVisibilityJson.error ?? "Failed to load stats visibility.");
+          }
+
+          setStatsVisibleToCoders(statsVisibilityJson.statsVisibleToCoders !== false);
+          setCanViewStats(Boolean(statsVisibilityJson.canViewStats));
+          setCanManageStatsVisibility(Boolean(statsVisibilityJson.canManageStatsVisibility));
+
+          if (statsVisibilityJson.setupRequired) {
+            setNotice(statsVisibilityJson.setupHint ?? "Project settings setup is required.");
+          }
+
           if (currentRole === "coder") {
             const coderDocumentsResponse = await fetch(withProjectQuery("/api/documents", currentProjectId), {
               cache: "no-store",
@@ -236,6 +272,9 @@ export default function ProjectManagementPage() {
           setMemberRoleDrafts({});
           setMemberGrantDrafts({});
           setMemberDenyDrafts({});
+          setCanViewStats(false);
+          setCanManageStatsVisibility(false);
+          setStatsVisibleToCoders(true);
         }
       } else {
         const noProjectMembership =
@@ -257,6 +296,9 @@ export default function ProjectManagementPage() {
         setMemberRoleDrafts({});
         setMemberGrantDrafts({});
         setMemberDenyDrafts({});
+        setCanViewStats(false);
+        setCanManageStatsVisibility(false);
+        setStatsVisibleToCoders(true);
       }
 
       const pendingResponse = await fetch("/api/projects/invites/pending", { cache: "no-store" });
@@ -494,6 +536,36 @@ export default function ProjectManagementPage() {
     }
   };
 
+  const handleToggleStatsVisibility = async (nextVisible: boolean) => {
+    if (!projectId || !canManageStatsVisibility) return;
+
+    setSavingStatsVisibility(true);
+    setError(null);
+
+    try {
+      const response = await fetch("/api/projects/stats-visibility", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          projectId,
+          statsVisibleToCoders: nextVisible,
+        }),
+      });
+
+      const payload = await parseResponseJson<StatsVisibilityResponse>(response, {});
+      if (!response.ok) {
+        throw new Error(payload.error ?? "Failed to update stats visibility.");
+      }
+
+      setStatsVisibleToCoders(payload.statsVisibleToCoders !== false);
+      setCanViewStats(Boolean(payload.canViewStats));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to update stats visibility.");
+    } finally {
+      setSavingStatsVisibility(false);
+    }
+  };
+
   const renderTile = (panel: ManagementPanel, title: string, description: string, metric?: string) => (
     <button
       className={`rounded-xl border p-4 text-left transition ${
@@ -587,6 +659,40 @@ export default function ProjectManagementPage() {
             ))}
           </select>
         </div>
+      )}
+
+      {projectId && (
+        <section className="mt-4 rounded-xl border border-gray-200 bg-white p-4">
+          <h2 className="text-sm font-semibold">Project Statistics Access</h2>
+          <p className="mt-1 text-xs text-gray-600">
+            Stats are scoped to the selected project.
+          </p>
+
+          <div className="mt-3 flex flex-wrap items-center gap-3">
+            {canViewStats ? (
+              <Link
+                className="rounded-md bg-gray-900 px-3 py-2 text-xs font-medium text-white"
+                href={withProjectQuery("/stats", projectId)}
+              >
+                Open Project Stats
+              </Link>
+            ) : (
+              <p className="text-xs text-gray-700">Stats are currently hidden from coders.</p>
+            )}
+
+            {canManageStatsVisibility && (
+              <label className="flex items-center gap-2 rounded-md border border-gray-300 px-3 py-2 text-xs text-gray-800">
+                <input
+                  checked={statsVisibleToCoders}
+                  disabled={savingStatsVisibility}
+                  onChange={(event) => void handleToggleStatsVisibility(event.target.checked)}
+                  type="checkbox"
+                />
+                Visible to coders
+              </label>
+            )}
+          </div>
+        </section>
       )}
 
       {notice && (

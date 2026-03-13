@@ -24,9 +24,6 @@ export default function AppLayout({ children }: { children: ReactNode }) {
             <Link className="text-gray-700 hover:text-black" href="/project-management">
               Project Management
             </Link>
-            <Link className="text-gray-700 hover:text-black" href="/stats">
-              Stats
-            </Link>
             <button
               className="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-800"
               onClick={() => void handleSignOut()}

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
   extractProjectId,
+  forbiddenResponse,
   isMissingRelationError,
   requireDocumentAccess,
   resolveProjectContext,
@@ -9,6 +10,7 @@ import {
 
 const NONE_LABEL = "__NONE__";
 const OVERLAP_LABEL = "__OVERLAP__";
+const statsVisibilitySetupHint = "Run supabase/project_stats_visibility.sql.";
 
 type AnnotationRow = {
   coder_id: string;
@@ -240,7 +242,7 @@ export async function GET(request: NextRequest) {
   const auth = await resolveProjectContext(extractProjectId(request), "view_documents");
   if (!auth.ok) return auth.response;
 
-  const { supabase, projectId } = auth.context;
+  const { supabase, projectId, role } = auth.context;
   const documentId = request.nextUrl.searchParams.get("docId");
 
   if (!documentId) {
@@ -249,6 +251,29 @@ export async function GET(request: NextRequest) {
 
   const access = await requireDocumentAccess(auth.context, documentId);
   if (!access.ok) return access.response;
+
+  const statsVisibilityResult = await supabase
+    .from("project_settings")
+    .select("stats_visible_to_coders")
+    .eq("project_id", projectId)
+    .maybeSingle();
+
+  if (
+    statsVisibilityResult.error &&
+    !isMissingRelationError(statsVisibilityResult.error)
+  ) {
+    return NextResponse.json({ error: statsVisibilityResult.error.message }, { status: 500 });
+  }
+
+  const statsVisibleToCoders =
+    isMissingRelationError(statsVisibilityResult.error) ||
+    statsVisibilityResult.data?.stats_visible_to_coders !== false;
+
+  if (role === "coder" && !statsVisibleToCoders) {
+    return forbiddenResponse(
+      `Project stats are hidden from coders. ${statsVisibilitySetupHint}`,
+    );
+  }
 
   const [documentResult, annotationsResult] = await Promise.all([
     supabase

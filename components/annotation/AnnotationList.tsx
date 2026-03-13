@@ -7,14 +7,6 @@ import { useAnnotationStore } from "@/store/annotationStore";
 
 type AnnotationViewMode = "all" | "user" | "merged";
 
-type VoteValue = "agree" | "disagree" | null;
-
-type VoteSummary = {
-  agree: number;
-  disagree: number;
-  userVote: VoteValue;
-};
-
 type InterRaterOverall = {
   kappa: number | null;
   observedAgreement: number;
@@ -38,7 +30,6 @@ type Props = {
   selectedAnnotatorId: string;
   onChangeViewMode: (mode: AnnotationViewMode) => void;
   onChangeSelectedAnnotatorId: (id: string) => void;
-  voteSummaryByAnnotationId: Record<string, VoteSummary>;
   mergedAnnotationIds: Set<string>;
   canManageMergedSet: boolean;
   interRaterOverall: InterRaterOverall | null;
@@ -46,7 +37,7 @@ type Props = {
   interRaterInsufficient: boolean;
   interRaterRaterCount: number;
   interRaterInvalidAnnotationCount: number;
-  onVote: (annotationId: string, vote: VoteValue) => Promise<void>;
+  interRaterHiddenReason: string | null;
   onToggleMerged: (annotationId: string, keep: boolean) => Promise<void>;
 };
 
@@ -58,7 +49,6 @@ export default function AnnotationList({
   selectedAnnotatorId,
   onChangeViewMode,
   onChangeSelectedAnnotatorId,
-  voteSummaryByAnnotationId,
   mergedAnnotationIds,
   canManageMergedSet,
   interRaterOverall,
@@ -66,7 +56,7 @@ export default function AnnotationList({
   interRaterInsufficient,
   interRaterRaterCount,
   interRaterInvalidAnnotationCount,
-  onVote,
+  interRaterHiddenReason,
   onToggleMerged,
 }: Props) {
   const { hoveredAnnotationId, setHoveredAnnotationId } = useAnnotationStore();
@@ -117,7 +107,9 @@ export default function AnnotationList({
 
       <div className="mb-4 rounded-md border border-gray-200 p-2">
         <p className="text-xs font-semibold">Inter-rater agreement (kappa)</p>
-        {interRaterInsufficient ? (
+        {interRaterHiddenReason ? (
+          <p className="mt-1 text-xs text-gray-600">{interRaterHiddenReason}</p>
+        ) : interRaterInsufficient ? (
           <p className="mt-1 text-xs text-gray-600">
             Need at least 2 annotators with valid span offsets for kappa scoring.
           </p>
@@ -232,11 +224,6 @@ export default function AnnotationList({
       <ul className="max-h-[48vh] space-y-2 overflow-y-auto pr-1">
         {visibleHistory.map((annotation) => {
           const technique = TAXONOMY.find((item) => item.id === annotation.tech_id);
-          const voteSummary = voteSummaryByAnnotationId[annotation.id] ?? {
-            agree: 0,
-            disagree: 0,
-            userVote: null,
-          };
           const isMerged = mergedAnnotationIds.has(annotation.id);
 
           return (
@@ -255,35 +242,6 @@ export default function AnnotationList({
               <p className="mt-1 text-[11px] text-gray-500">
                 {annotation.coder_name} - {new Date(annotation.created_at).toLocaleString()}
               </p>
-
-              <div className="mt-2 flex items-center gap-2">
-                <button
-                  className={`rounded border px-2 py-0.5 text-[11px] font-medium ${
-                    voteSummary.userVote === "agree"
-                      ? "border-emerald-700 bg-emerald-50 text-emerald-800"
-                      : "border-gray-300 bg-white text-gray-700"
-                  }`}
-                  onClick={() =>
-                    void onVote(annotation.id, voteSummary.userVote === "agree" ? null : "agree")
-                  }
-                  type="button"
-                >
-                  Agree ({voteSummary.agree})
-                </button>
-                <button
-                  className={`rounded border px-2 py-0.5 text-[11px] font-medium ${
-                    voteSummary.userVote === "disagree"
-                      ? "border-rose-700 bg-rose-50 text-rose-800"
-                      : "border-gray-300 bg-white text-gray-700"
-                  }`}
-                  onClick={() =>
-                    void onVote(annotation.id, voteSummary.userVote === "disagree" ? null : "disagree")
-                  }
-                  type="button"
-                >
-                  Disagree ({voteSummary.disagree})
-                </button>
-              </div>
 
               {canManageMergedSet && (
                 <div className="mt-2">

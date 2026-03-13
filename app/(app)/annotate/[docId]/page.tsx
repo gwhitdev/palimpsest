@@ -36,16 +36,7 @@ type QuoteDraft = {
 
 type AnnotationViewMode = "all" | "user" | "merged";
 
-type VoteValue = "agree" | "disagree" | null;
-
-type VoteSummary = {
-  agree: number;
-  disagree: number;
-  userVote: VoteValue;
-};
-
 type AnnotationInsightsResponse = {
-  voteSummaryByAnnotationId?: Record<string, VoteSummary>;
   mergedAnnotationIds?: string[];
   setupRequired?: boolean;
   setupHint?: string;
@@ -72,6 +63,7 @@ type InterRaterAgreementResponse = {
   pairwise?: InterRaterPairwise[];
   raterCount?: number;
   insufficientRaters?: boolean;
+  statsHidden?: boolean;
   stats?: {
     invalidAnnotationCount?: number;
   };
@@ -94,15 +86,13 @@ export default function AnnotatePage() {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<AnnotationViewMode>("all");
   const [selectedAnnotatorId, setSelectedAnnotatorId] = useState("all");
-  const [voteSummaryByAnnotationId, setVoteSummaryByAnnotationId] = useState<
-    Record<string, VoteSummary>
-  >({});
   const [mergedAnnotationIds, setMergedAnnotationIds] = useState<Set<string>>(new Set());
   const [interRaterOverall, setInterRaterOverall] = useState<InterRaterOverall | null>(null);
   const [interRaterPairwise, setInterRaterPairwise] = useState<InterRaterPairwise[]>([]);
   const [interRaterInsufficient, setInterRaterInsufficient] = useState(false);
   const [interRaterRaterCount, setInterRaterRaterCount] = useState(0);
   const [interRaterInvalidAnnotationCount, setInterRaterInvalidAnnotationCount] = useState(0);
+  const [interRaterHiddenReason, setInterRaterHiddenReason] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const {
@@ -168,7 +158,6 @@ export default function AnnotatePage() {
   }, [docId, projectId]);
 
   const applyInsights = useCallback((payload: AnnotationInsightsResponse) => {
-    setVoteSummaryByAnnotationId(payload.voteSummaryByAnnotationId ?? {});
     setMergedAnnotationIds(new Set(payload.mergedAnnotationIds ?? []));
   }, []);
 
@@ -198,9 +187,20 @@ export default function AnnotatePage() {
     const payload = await parseResponseJson<InterRaterAgreementResponse>(response, {});
 
     if (!response.ok) {
+      if (response.status === 403) {
+        setInterRaterOverall(null);
+        setInterRaterPairwise([]);
+        setInterRaterInsufficient(false);
+        setInterRaterRaterCount(0);
+        setInterRaterInvalidAnnotationCount(0);
+        setInterRaterHiddenReason(payload.error ?? "Project stats are hidden from coders.");
+        return;
+      }
+
       throw new Error(payload.error ?? "Unable to load inter-rater agreement.");
     }
 
+    setInterRaterHiddenReason(null);
     setInterRaterOverall(payload.overall ?? null);
     setInterRaterPairwise(payload.pairwise ?? []);
     setInterRaterInsufficient(Boolean(payload.insufficientRaters));
@@ -362,18 +362,6 @@ export default function AnnotatePage() {
 
     const channel = supabase
       .channel(`annotation-insights-${projectId}-${docId}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "annotation_votes",
-          filter: `document_id=eq.${docId}`,
-        },
-        () => {
-          void loadInsights();
-        },
-      )
       .on(
         "postgres_changes",
         {
@@ -579,33 +567,6 @@ export default function AnnotatePage() {
     }
   };
 
-  const handleVote = async (annotationId: string, vote: VoteValue) => {
-    if (!projectId) return;
-
-    try {
-      const response = await fetch("/api/annotation-insights", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          projectId,
-          annotationId,
-          kind: "vote",
-          vote,
-        }),
-      });
-
-      const payload = await parseResponseJson<AnnotationInsightsResponse>(response, {});
-      if (!response.ok) {
-        throw new Error(payload.error ?? "Failed to save vote.");
-      }
-
-      applyInsights(payload);
-      setError(null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to save vote.");
-    }
-  };
-
   const handleToggleMerged = async (annotationId: string, keep: boolean) => {
     if (!projectId) return;
 
@@ -616,7 +577,6 @@ export default function AnnotatePage() {
         body: JSON.stringify({
           projectId,
           annotationId,
-          kind: "merged",
           keep,
         }),
       });
@@ -715,7 +675,6 @@ export default function AnnotatePage() {
           selectedAnnotatorId={selectedAnnotatorId}
           onChangeViewMode={setViewMode}
           onChangeSelectedAnnotatorId={setSelectedAnnotatorId}
-          voteSummaryByAnnotationId={voteSummaryByAnnotationId}
           mergedAnnotationIds={mergedAnnotationIds}
           canManageMergedSet={canManageMergedSet}
           interRaterOverall={interRaterOverall}
@@ -723,7 +682,7 @@ export default function AnnotatePage() {
           interRaterInsufficient={interRaterInsufficient}
           interRaterRaterCount={interRaterRaterCount}
           interRaterInvalidAnnotationCount={interRaterInvalidAnnotationCount}
-          onVote={handleVote}
+          interRaterHiddenReason={interRaterHiddenReason}
           onToggleMerged={handleToggleMerged}
         />
       </aside>

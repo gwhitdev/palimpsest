@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
 import { NextRequest } from "next/server";
-import { extractProjectId, resolveProjectContext } from "@/lib/server/projectAuth";
+import {
+  extractProjectId,
+  forbiddenResponse,
+  isMissingRelationError,
+  resolveProjectContext,
+} from "@/lib/server/projectAuth";
 
 type ExportRow = {
   tech_id: string;
@@ -18,7 +23,25 @@ export async function GET(request: NextRequest) {
   const auth = await resolveProjectContext(extractProjectId(request), "export_data");
   if (!auth.ok) return auth.response;
 
-  const { supabase, projectId } = auth.context;
+  const { supabase, projectId, role } = auth.context;
+
+  const visibilityResult = await supabase
+    .from("project_settings")
+    .select("stats_visible_to_coders")
+    .eq("project_id", projectId)
+    .maybeSingle();
+
+  if (visibilityResult.error && !isMissingRelationError(visibilityResult.error)) {
+    return NextResponse.json({ error: visibilityResult.error.message }, { status: 500 });
+  }
+
+  const statsVisibleToCoders =
+    isMissingRelationError(visibilityResult.error) ||
+    visibilityResult.data?.stats_visible_to_coders !== false;
+
+  if (role === "coder" && !statsVisibleToCoders) {
+    return forbiddenResponse("Project stats export is hidden from coders.");
+  }
 
   const { data, error } = await supabase
     .from("annotations")
