@@ -9,6 +9,7 @@ import {
   resolveProjectContext,
   schemaNotReadyResponse,
 } from "@/lib/server/projectAuth";
+import { sanitizePlainTextInput } from "@/lib/security/sanitizeText";
 
 type Params = {
   params: Promise<{ docId: string }>;
@@ -292,11 +293,11 @@ export async function PATCH(request: NextRequest, { params }: Params) {
   const updatePayload: Record<string, unknown> = {};
   if (hasSourceUpdate) {
     const normalizedSource = typeof body.source === "string" ? body.source.trim() || null : null;
-    updatePayload.source = normalizedSource;
+    updatePayload.source = normalizedSource ? sanitizePlainTextInput(normalizedSource) : null;
   }
 
   if (hasContentUpdate) {
-    const nextContent = body.content as string;
+    const nextContent = sanitizePlainTextInput(body.content as string);
     const currentContent = currentDocumentResult.data.content;
     if (nextContent !== currentContent) {
       updatePayload.content = nextContent;

@@ -6,7 +6,7 @@ import AISuggestionsDrawer from "@/components/annotation/AISuggestionsDrawer";
 import AnnotationList from "@/components/annotation/AnnotationList";
 import AnnotationEditorModal from "@/components/annotation/AnnotationEditorModal";
 import CommentsDrawer from "@/components/annotation/CommentsDrawer";
-import SelectionPopup from "@/components/annotation/SelectionPopup";
+import SelectionPopup from "../../../../components/annotation/SelectionPopup";
 import TechniquePanel from "@/components/annotation/TechniquePanel";
 import TextAnnotator from "@/components/annotation/TextAnnotator";
 import { parseResponseJson } from "@/lib/http";

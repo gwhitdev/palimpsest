@@ -1,7 +1,13 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { TAXONOMY } from "@/lib/taxonomy";
+import {
+  groupTechniquesByLevel,
+  TAXONOMY_LEVEL_BADGE_CLASSES,
+  TAXONOMY_LEVEL_DESCRIPTIONS,
+  TAXONOMY_LEVEL_LABELS,
+} from "@/lib/taxonomyLevels";
 
 type Props = {
   position: { x: number; y: number } | null;
@@ -14,6 +20,7 @@ type Props = {
 export default function SelectionPopup({ position, selectedText, onSelect, onComment, onDismiss }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const [selectedTechIds, setSelectedTechIds] = useState<string[]>([]);
+  const techniquesByLevel = useMemo(() => groupTechniquesByLevel(TAXONOMY), []);
 
   useEffect(() => {
     if (!position) {
@@ -55,11 +62,12 @@ export default function SelectionPopup({ position, selectedText, onSelect, onCom
   return (
     <div
       ref={ref}
-      className="fixed z-50 max-w-xs rounded-xl border border-gray-200 bg-white p-3 shadow-lg"
+      className="fixed z-50 w-80 max-w-sm rounded-xl border border-gray-200 bg-white p-3 shadow-lg"
       style={{ left: position.x, top: position.y }}
     >
       <p className="mb-1 text-xs font-medium text-gray-500">Assign technique to selection</p>
       <p className="mb-2 line-clamp-2 text-xs text-gray-700">&quot;{selectedText}&quot;</p>
+
       <button
         className="mb-2 w-full rounded border border-sky-600 px-2 py-1 text-xs font-medium text-sky-700 hover:bg-sky-50"
         onClick={onComment}
@@ -67,26 +75,44 @@ export default function SelectionPopup({ position, selectedText, onSelect, onCom
       >
         Add Comment
       </button>
+
       <p className="mb-2 text-[11px] text-gray-500">Select one or more techniques, then apply.</p>
-      <div className="flex flex-wrap gap-1">
-        {TAXONOMY.map((technique) => (
-          <button
-            key={technique.id}
-            onClick={() => toggleTechnique(technique.id)}
-            className={`rounded border px-2 py-1 text-xs font-medium hover:bg-gray-50 ${
-              selectedTechIds.includes(technique.id)
-                ? "bg-gray-900 text-white border-gray-900"
-                : technique.level === 1
-                  ? "border-teal-600 text-teal-800"
-                  : technique.level === 2
-                    ? "border-amber-600 text-amber-800"
-                    : "border-violet-600 text-violet-800"
-            }`}
-            title={technique.definition}
-            type="button"
+
+      <div className="mb-2 flex flex-wrap gap-1">
+        {([1, 2, 3] as const).map((level) => (
+          <span
+            key={`selection-level-legend-${level}`}
+            className={`rounded-full border px-1.5 py-0.5 text-[10px] font-medium ${TAXONOMY_LEVEL_BADGE_CLASSES[level]}`}
           >
-            {technique.id}
-          </button>
+            {TAXONOMY_LEVEL_LABELS[level]} - {TAXONOMY_LEVEL_DESCRIPTIONS[level]}
+          </span>
+        ))}
+      </div>
+
+      <div className="max-h-56 space-y-2 overflow-y-auto pr-1">
+        {([1, 2, 3] as const).map((level) => (
+          <div key={`selection-level-${level}`} className="rounded-md border border-gray-200 p-2">
+            <p className="mb-1 text-[11px] font-semibold text-gray-700">
+              {TAXONOMY_LEVEL_LABELS[level]} ({techniquesByLevel[level].length})
+            </p>
+            <div className="flex flex-wrap gap-1">
+              {techniquesByLevel[level].map((technique) => (
+                <button
+                  key={technique.id}
+                  onClick={() => toggleTechnique(technique.id)}
+                  className={`rounded border px-2 py-1 text-xs font-medium hover:bg-gray-50 ${
+                    selectedTechIds.includes(technique.id)
+                      ? "border-gray-900 bg-gray-900 text-white"
+                      : TAXONOMY_LEVEL_BADGE_CLASSES[technique.level]
+                  }`}
+                  title={`${TAXONOMY_LEVEL_LABELS[technique.level]}: ${technique.definition}`}
+                  type="button"
+                >
+                  {technique.id} 
+                </button>
+              ))}
+            </div>
+          </div>
         ))}
       </div>
 

@@ -43,12 +43,13 @@ export default function TextAnnotator({
       const levelClass = `level-${tech.level} ann-mark${hoveredAnnotationId === annotation.id ? " ann-hovered" : ""}`;
       const quoted = escapeHtml(annotation.quoted_text);
       const canRemove = Boolean(currentUserId && annotation.coder_id === currentUserId);
-      const tagText = canRemove ? `${annotation.tech_id} x` : annotation.tech_id;
+      const levelLabel = `L${tech.level}`;
+      const tagText = canRemove ? `${annotation.tech_id} ${levelLabel} x` : `${annotation.tech_id} ${levelLabel}`;
       const removeAttr = canRemove ? ` data-remove-id="${annotation.id}"` : "";
 
       rendered = rendered.replace(
         quoted,
-        `<mark class="${levelClass}" data-id="${annotation.id}" title="${escapeHtml(`${tech.name}: ${tech.plainName}`)}">${quoted}<button type="button" class="ann-tag"${removeAttr}>${tagText}</button></mark>`,
+        `<mark class="${levelClass}" data-id="${annotation.id}" title="${escapeHtml(`${tech.name}: ${tech.plainName} (${levelLabel})`)}">${quoted}<button type="button" class="ann-tag"${removeAttr}>${tagText}</button></mark>`,
       );
     });
 

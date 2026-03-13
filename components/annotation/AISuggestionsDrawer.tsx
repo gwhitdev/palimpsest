@@ -1,6 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { TAXONOMY } from "@/lib/taxonomy";
+import { TAXONOMY_LEVEL_BADGE_CLASSES, TAXONOMY_LEVEL_LABELS } from "@/lib/taxonomyLevels";
 import { useAnnotationStore } from "@/store/annotationStore";
 
 type Suggestion = {
@@ -16,6 +18,7 @@ type Props = {
 export default function AISuggestionsDrawer({ onAcceptSuggestion, showLaunchButton = true }: Props) {
   const [acceptingIndex, setAcceptingIndex] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const taxonomyById = useMemo(() => new Map(TAXONOMY.map((technique) => [technique.id, technique])), []);
   const {
     aiSuggestions,
     dismissSuggestion,
@@ -70,29 +73,42 @@ export default function AISuggestionsDrawer({ onAcceptSuggestion, showLaunchButt
           {aiSuggestions.length === 0 && <p className="mt-3 text-xs text-gray-600">No suggestions yet.</p>}
 
           <ul className="mt-3 space-y-2 overflow-y-auto pr-1">
-            {aiSuggestions.map((suggestion, index) => (
-              <li key={`${suggestion.techId}-${index}`} className="rounded-md border border-gray-200 p-2">
-                <p className="text-xs font-semibold">{suggestion.techId}</p>
-                <p className="mt-1 text-xs text-gray-700">{suggestion.text}</p>
-                <div className="mt-2 flex items-center gap-3">
-                  <button
-                    className="text-xs font-medium text-gray-900 underline disabled:opacity-50"
-                    disabled={acceptingIndex === index}
-                    onClick={() => void handleAccept(index)}
-                    type="button"
-                  >
-                    {acceptingIndex === index ? "Accepting..." : "Accept"}
-                  </button>
-                  <button
-                    className="text-xs font-medium text-gray-600 underline"
-                    onClick={() => dismissSuggestion(index)}
-                    type="button"
-                  >
-                    Dismiss
-                  </button>
-                </div>
-              </li>
-            ))}
+            {aiSuggestions.map((suggestion, index) => {
+              const technique = taxonomyById.get(suggestion.techId);
+
+              return (
+                <li key={`${suggestion.techId}-${index}`} className="rounded-md border border-gray-200 p-2">
+                  <div className="flex items-center gap-2">
+                    <p className="text-xs font-semibold">{suggestion.techId}</p>
+                    {technique && (
+                      <span
+                        className={`rounded-full border px-1.5 py-0.5 text-[10px] font-medium ${TAXONOMY_LEVEL_BADGE_CLASSES[technique.level]}`}
+                      >
+                        {TAXONOMY_LEVEL_LABELS[technique.level]}
+                      </span>
+                    )}
+                  </div>
+                  <p className="mt-1 text-xs text-gray-700">{suggestion.text}</p>
+                  <div className="mt-2 flex items-center gap-3">
+                    <button
+                      className="text-xs font-medium text-gray-900 underline disabled:opacity-50"
+                      disabled={acceptingIndex === index}
+                      onClick={() => void handleAccept(index)}
+                      type="button"
+                    >
+                      {acceptingIndex === index ? "Accepting..." : "Accept"}
+                    </button>
+                    <button
+                      className="text-xs font-medium text-gray-600 underline"
+                      onClick={() => dismissSuggestion(index)}
+                      type="button"
+                    >
+                      Dismiss
+                    </button>
+                  </div>
+                </li>
+              );
+            })}
           </ul>
         </aside>
       )}

@@ -7,6 +7,7 @@ create extension if not exists "uuid-ossp";
 create table if not exists public.projects (
   id          uuid primary key default uuid_generate_v4(),
   name        text not null,
+  status      text not null default 'active' check (status in ('active', 'closed', 'archived')),
   created_by  uuid references auth.users(id),
   created_at  timestamptz default now()
 );

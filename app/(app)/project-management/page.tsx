@@ -7,12 +7,15 @@ import { getActiveProjectId, setActiveProjectId, withProjectQuery } from "@/lib/
 import { Coder, DocumentWithAssignments } from "@/lib/types";
 
 type ProjectRole = "owner" | "coder";
+type ProjectStatus = "active" | "closed" | "archived";
+type ProjectLifecycleAction = "close" | "archive" | "reopen" | "delete";
 
 type ManagementPanel = "invite" | "members" | "upload" | "documents";
 
 type ProjectSummary = {
   id: string;
   name: string;
+  status: ProjectStatus;
   role: ProjectRole;
   created_at: string;
 };
@@ -28,7 +31,26 @@ type CreateProjectResponse = {
   project?: {
     id: string;
     name: string;
+    status?: ProjectStatus;
   };
+  error?: string;
+};
+
+type UpdateProjectResponse = {
+  project?: {
+    id: string;
+    name: string;
+    status: ProjectStatus;
+  };
+  setupRequired?: boolean;
+  setupHint?: string;
+  error?: string;
+};
+
+type DeleteProjectResponse = {
+  deletedProjectId?: string;
+  nextProjectId?: string | null;
+  projects?: ProjectSummary[];
   error?: string;
 };
 
@@ -100,6 +122,7 @@ export default function ProjectManagementPage() {
   const [role, setRole] = useState<ProjectRole | null>(null);
   const [projectId, setProjectId] = useState<string | null>(null);
   const [projectName, setProjectName] = useState<string>("Project");
+  const [projectStatus, setProjectStatus] = useState<ProjectStatus>("active");
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [documents, setDocuments] = useState<DocumentWithAssignments[]>([]);
   const [coders, setCoders] = useState<Coder[]>([]);
@@ -188,6 +211,7 @@ export default function ProjectManagementPage() {
 
           const currentProject = (projectJson.projects ?? []).find((project) => project.id === currentProjectId);
           setProjectName(currentProject?.name ?? "Project");
+          setProjectStatus(currentProject?.status ?? "active");
 
           const statsVisibilityResponse = await fetch(
             withProjectQuery("/api/projects/stats-visibility", currentProjectId),
@@ -276,6 +300,7 @@ export default function ProjectManagementPage() {
           setRole(null);
           setProjectId(null);
           setProjectName("No active project");
+          setProjectStatus("active");
           setDocuments([]);
           setCoders([]);
           setOwnerInvites([]);
@@ -302,6 +327,7 @@ export default function ProjectManagementPage() {
         setRole(null);
         setProjectId(null);
         setProjectName("No active project");
+        setProjectStatus("active");
         setProjects([]);
         setDocuments([]);
         setCoders([]);
@@ -524,6 +550,81 @@ export default function ProjectManagementPage() {
     }
   };
 
+  const handleProjectLifecycleAction = async (action: ProjectLifecycleAction) => {
+    if (!projectId || role !== "owner") return;
+
+    const actionKey = `project-${action}`;
+    const lifecyclePrompts: Record<ProjectLifecycleAction, string> = {
+      close: "Close this project? Coders will still be listed as members, but the project will be marked closed.",
+      archive: "Archive this project? You can reopen it later.",
+      reopen: "Reopen this project and set it back to active?",
+      delete: `Delete project \"${projectName}\" permanently? This also removes its documents, annotations, and invites.`,
+    };
+
+    if (!window.confirm(lifecyclePrompts[action])) {
+      return;
+    }
+
+    if (action === "delete") {
+      const typedName = window.prompt(
+        `Type the project name exactly to confirm deletion:\n${projectName}`,
+        "",
+      );
+
+      if (typedName !== projectName) {
+        setError("Project deletion cancelled because the confirmation name did not match.");
+        return;
+      }
+    }
+
+    setBusyAction(actionKey);
+    setError(null);
+
+    try {
+      if (action === "delete") {
+        const response = await fetch("/api/projects", {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ projectId }),
+        });
+
+        const payload = await parseResponseJson<DeleteProjectResponse>(response, {});
+        if (!response.ok) {
+          throw new Error(payload.error ?? "Failed to delete project.");
+        }
+
+        const nextProjectId = payload.nextProjectId ?? undefined;
+        setActiveProjectId(nextProjectId ?? "");
+        await loadProjectManagement(nextProjectId);
+        setNotice("Project deleted.");
+        return;
+      }
+
+      const response = await fetch("/api/projects", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId, action }),
+      });
+
+      const payload = await parseResponseJson<UpdateProjectResponse>(response, {});
+      if (!response.ok) {
+        throw new Error(payload.error ?? "Failed to update project status.");
+      }
+
+      await loadProjectManagement(projectId);
+      const actionLabels: Record<Exclude<ProjectLifecycleAction, "delete">, string> = {
+        close: "closed",
+        archive: "archived",
+        reopen: "reopened",
+      };
+      setNotice(`Project ${actionLabels[action]} successfully.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to update project lifecycle state.");
+    } finally {
+      setBusyAction(null);
+    }
+  };
+
   const handleAcceptInvite = async (token: string) => {
     setBusyAction(token);
     setError(null);
@@ -608,6 +709,12 @@ export default function ProjectManagementPage() {
     </button>
   );
 
+  const statusBadgeClassByStatus: Record<ProjectStatus, string> = {
+    active: "border-emerald-200 bg-emerald-50 text-emerald-800",
+    closed: "border-amber-200 bg-amber-50 text-amber-800",
+    archived: "border-slate-200 bg-slate-100 text-slate-700",
+  };
+
   return (
     <main className="mx-auto max-w-6xl px-6 py-8">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -682,11 +789,70 @@ export default function ProjectManagementPage() {
           >
             {projects.map((project) => (
               <option key={project.id} value={project.id}>
-                {project.name} ({project.role})
+                {project.name} ({project.role}, {project.status})
               </option>
             ))}
           </select>
         </div>
+      )}
+
+      {projectId && role === "owner" && (
+        <section className="mt-4 rounded-xl border border-gray-200 bg-white p-4">
+          <h2 className="text-sm font-semibold">Project Lifecycle</h2>
+          <p className="mt-1 text-xs text-gray-600">
+            Close, archive, or permanently delete this project.
+          </p>
+
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <span
+              className={`inline-flex items-center rounded-full border px-2 py-1 text-xs font-medium ${statusBadgeClassByStatus[projectStatus]}`}
+            >
+              Status: {projectStatus}
+            </span>
+
+            {projectStatus !== "closed" && (
+              <button
+                className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-900 disabled:opacity-50"
+                disabled={busyAction === "project-close"}
+                onClick={() => void handleProjectLifecycleAction("close")}
+                type="button"
+              >
+                {busyAction === "project-close" ? "Closing..." : "Close Project"}
+              </button>
+            )}
+
+            {projectStatus !== "archived" && (
+              <button
+                className="rounded-md border border-gray-300 bg-gray-100 px-3 py-2 text-xs font-medium text-gray-800 disabled:opacity-50"
+                disabled={busyAction === "project-archive"}
+                onClick={() => void handleProjectLifecycleAction("archive")}
+                type="button"
+              >
+                {busyAction === "project-archive" ? "Archiving..." : "Archive Project"}
+              </button>
+            )}
+
+            {projectStatus !== "active" && (
+              <button
+                className="rounded-md border border-emerald-300 bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-800 disabled:opacity-50"
+                disabled={busyAction === "project-reopen"}
+                onClick={() => void handleProjectLifecycleAction("reopen")}
+                type="button"
+              >
+                {busyAction === "project-reopen" ? "Reopening..." : "Reopen Project"}
+              </button>
+            )}
+
+            <button
+              className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-xs font-medium text-red-700 disabled:opacity-50"
+              disabled={busyAction === "project-delete"}
+              onClick={() => void handleProjectLifecycleAction("delete")}
+              type="button"
+            >
+              {busyAction === "project-delete" ? "Deleting..." : "Delete Project"}
+            </button>
+          </div>
+        </section>
       )}
 
       {projectId && (

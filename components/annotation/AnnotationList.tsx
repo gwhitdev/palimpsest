@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Annotation, AnnotationCodeChange, AnnotatorUser } from "@/lib/types";
 import { TAXONOMY } from "@/lib/taxonomy";
+import { TAXONOMY_LEVEL_BADGE_CLASSES, TAXONOMY_LEVEL_LABELS } from "@/lib/taxonomyLevels";
 import { useAnnotationStore } from "@/store/annotationStore";
 
 type AnnotationViewMode = "all" | "user" | "merged";
@@ -295,6 +296,10 @@ export default function AnnotationList({
     return byId;
   }, [documentLength, history]);
 
+  const taxonomyById = useMemo(() => {
+    return new Map(TAXONOMY.map((technique) => [technique.id, technique]));
+  }, []);
+
   useEffect(() => {
     const latestId = visibleHistory[0]?.id ?? null;
     const visibleIds = new Set(visibleHistory.map((annotation) => annotation.id));
@@ -482,7 +487,7 @@ export default function AnnotationList({
       )}
       <ul className="max-h-[48vh] space-y-2 overflow-y-auto pr-1">
         {visibleHistory.map((annotation) => {
-          const technique = TAXONOMY.find((item) => item.id === annotation.tech_id);
+          const technique = taxonomyById.get(annotation.tech_id);
           const isMerged = mergedAnnotationIds.has(annotation.id);
           const checklist = checklistsByAnnotationId.get(annotation.id);
           const isExpanded = expandedAnnotationIds.has(annotation.id);
@@ -508,7 +513,14 @@ export default function AnnotationList({
             >
               <div className="flex items-start justify-between gap-2">
                 <div>
-                  <p className="text-xs font-semibold">{annotation.tech_id} {technique ? `- ${technique.name}` : ""}</p>
+                  <p className="flex items-center gap-1.5 text-xs font-semibold">
+                    <span>{annotation.tech_id} {technique ? `- ${technique.name}` : ""}</span>
+                    {technique && (
+                      <span className={`rounded-full border px-1.5 py-0.5 text-[10px] font-medium ${TAXONOMY_LEVEL_BADGE_CLASSES[technique.level]}`}>
+                        {TAXONOMY_LEVEL_LABELS[technique.level]}
+                      </span>
+                    )}
+                  </p>
                   <p className="mt-1 text-[11px] text-gray-500">
                     {annotation.coder_name} - {new Date(annotation.created_at).toLocaleString()}
                   </p>

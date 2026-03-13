@@ -5,6 +5,7 @@ import {
   resolveProjectContext,
   schemaNotReadyResponse,
 } from "@/lib/server/projectAuth";
+import { sanitizePlainTextInput } from "@/lib/security/sanitizeText";
 
 type DocumentInsertBody = {
   title?: string;
@@ -78,9 +79,13 @@ export async function POST(request: NextRequest) {
   if (!auth.ok) return auth.response;
 
   const { projectId, supabase, userId } = auth.context;
-  const title = body.title?.trim();
-  const source = body.source?.trim() || null;
-  const content = body.content?.trim();
+  const rawTitle = body.title?.trim();
+  const rawSource = body.source?.trim() || null;
+  const rawContent = body.content?.trim();
+
+  const title = rawTitle ? sanitizePlainTextInput(rawTitle) : undefined;
+  const source = rawSource ? sanitizePlainTextInput(rawSource) : null;
+  const content = rawContent ? sanitizePlainTextInput(rawContent) : undefined;
   const assignedCoderIds = [...new Set((body.assignedCoderIds ?? []).filter(Boolean))];
 
   if (!title || !content) {

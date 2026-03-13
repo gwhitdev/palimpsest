@@ -10,6 +10,7 @@ create table if not exists public.coders (
 create table if not exists public.projects (
   id          uuid primary key default uuid_generate_v4(),
   name        text not null,
+  status      text not null default 'active' check (status in ('active', 'closed', 'archived')),
   created_by  uuid references auth.users(id),
   created_at  timestamptz default now()
 );
@@ -460,6 +461,11 @@ create policy "Owners can update projects"
   on public.projects for update to authenticated
   using (public.project_has_permission(projects.id, auth.uid(), 'manage_project'))
   with check (public.project_has_permission(projects.id, auth.uid(), 'manage_project'));
+
+drop policy if exists "Owners can delete projects" on public.projects;
+create policy "Owners can delete projects"
+  on public.projects for delete to authenticated
+  using (public.project_has_permission(projects.id, auth.uid(), 'manage_project'));
 
 drop policy if exists "Members can read project memberships" on public.project_memberships;
 create policy "Members can read project memberships"

@@ -111,7 +111,7 @@ export default function AnnotationEditorModal({
           >
             {TAXONOMY.map((technique) => (
               <option key={technique.id} value={technique.id}>
-                {technique.id} - {technique.name}
+                (L{technique.level}) {technique.id} - {technique.name}
               </option>
             ))}
           </select>

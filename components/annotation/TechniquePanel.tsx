@@ -2,6 +2,11 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { TAXONOMY } from "@/lib/taxonomy";
+import {
+  groupTechniquesByLevel,
+  TAXONOMY_LEVEL_DESCRIPTIONS,
+  TAXONOMY_LEVEL_LABELS,
+} from "@/lib/taxonomyLevels";
 import { parseResponseJson } from "@/lib/http";
 import { useAnnotationStore } from "@/store/annotationStore";
 
@@ -25,6 +30,12 @@ type PracticeNotePatchResponse = {
   note?: { techId: string; practiceNote: string; updatedAt: string | null };
   error?: string;
 };
+
+const TAXONOMY_LEVEL_ROW_CLASSES = {
+  1: "border-teal-200 bg-teal-50/70",
+  2: "border-amber-200 bg-amber-50/70",
+  3: "border-violet-200 bg-violet-50/70",
+} as const;
 
 export default function TechniquePanel({
   docId,
@@ -80,6 +91,8 @@ export default function TechniquePanel({
     if (!activeTechniqueId) return null;
     return TAXONOMY.find((technique) => technique.id === activeTechniqueId) ?? null;
   }, [activeTechniqueId]);
+
+  const techniquesByLevel = useMemo(() => groupTechniquesByLevel(TAXONOMY), []);
 
   useEffect(() => {
     if (!activeTechniqueId) {
@@ -184,55 +197,81 @@ export default function TechniquePanel({
 
       <div className="rounded-xl border border-gray-200 p-3">
         <h3 className="text-sm font-semibold">Taxonomy</h3>
-        <ul className="mt-2 space-y-2">
-          {TAXONOMY.map((technique) => (
-            <li key={technique.id} className="rounded-md border border-gray-100 p-2">
-              <button
-                className="w-full cursor-pointer text-left"
-                onClick={() => {
-                  setActiveTechniqueId((current) => (current === technique.id ? null : technique.id));
-                  setTaxonomyError(null);
-                }}
-                type="button"
-              >
-                <p className="text-xs font-semibold">{technique.id} - {technique.name}</p>
-              </button>
-              <p className="text-xs text-gray-600">{technique.plainName}</p>
+        <p className="mt-1 text-[11px] text-gray-600">
+          Codes are grouped by level to make the taxonomy structure explicit.
+        </p>
 
-              {activeTechniqueId === technique.id && activeTechnique && (
-                <div className="mt-2 rounded-md border border-sky-200 bg-sky-50 p-2 text-[11px] text-sky-900">
-                  <p className="font-semibold">What this means in practice</p>
-                  <p className="mt-1">{activeTechnique.userLabel}</p>
-                  <p className="mt-1 text-sky-800">{activeTechnique.definition}</p>
-                  {practiceNotes[technique.id]?.practiceNote && (
-                    <p className="mt-1 rounded bg-white px-2 py-1 text-sky-900">
-                      Project guidance: {practiceNotes[technique.id].practiceNote}
-                    </p>
-                  )}
+        <div className="mt-2 space-y-2">
+          {([1, 2, 3] as const).map((level) => (
+            <div key={`taxonomy-level-${level}`} className="rounded-md border border-gray-200 p-2">
+              <p className="mb-2 flex items-center justify-between text-[11px] font-semibold text-gray-700">
+                <span>
+                  {TAXONOMY_LEVEL_LABELS[level]} - {TAXONOMY_LEVEL_DESCRIPTIONS[level]}
+                </span>
+                <span className="text-gray-500">{techniquesByLevel[level].length} codes</span>
+              </p>
 
-                  {effectiveCanEditPractice && (
-                    <div className="mt-2 space-y-2">
-                      <textarea
-                        className="min-h-20 w-full rounded border border-sky-300 bg-white px-2 py-1 text-[11px]"
-                        onChange={(event) => setPracticeNoteDraft(event.target.value)}
-                        placeholder="Add practical interpretation for this project..."
-                        value={practiceNoteDraft}
-                      />
-                      <button
-                        className="rounded border border-sky-700 bg-sky-700 px-2 py-1 text-[11px] font-medium text-white disabled:opacity-50"
-                        disabled={isSavingPracticeNote}
-                        onClick={() => void savePracticeNote()}
-                        type="button"
-                      >
-                        {isSavingPracticeNote ? "Saving..." : "Save guidance"}
-                      </button>
-                    </div>
-                  )}
-                </div>
-              )}
-            </li>
+              <ul className="space-y-2">
+                {techniquesByLevel[level].map((technique) => (
+                  <li
+                    key={technique.id}
+                    className={`rounded-md border p-2 ${TAXONOMY_LEVEL_ROW_CLASSES[technique.level]}`}
+                  >
+                    <button
+                      className="w-full cursor-pointer text-left"
+                      onClick={() => {
+                        setActiveTechniqueId((current) => (current === technique.id ? null : technique.id));
+                        setTaxonomyError(null);
+                      }}
+                      type="button"
+                    >
+                      <p className="flex items-center gap-2 text-xs font-semibold">
+                        <span className="font-mono text-[11px]">{technique.id}</span>
+                        <span>{technique.name}</span>
+                      </p>
+                    </button>
+                    <p className="text-xs text-gray-600">{technique.plainName}</p>
+
+                    {activeTechniqueId === technique.id && activeTechnique && (
+                      <div className="mt-2 rounded-md border border-sky-200 bg-sky-50 p-2 text-[11px] text-sky-900">
+                        <p className="font-semibold">What this means in practice</p>
+                        <p className="mt-1">
+                          {TAXONOMY_LEVEL_LABELS[activeTechnique.level]} - {TAXONOMY_LEVEL_DESCRIPTIONS[activeTechnique.level]}
+                        </p>
+                        <p className="mt-1">{activeTechnique.userLabel}</p>
+                        <p className="mt-1 text-sky-800">{activeTechnique.definition}</p>
+                        {practiceNotes[technique.id]?.practiceNote && (
+                          <p className="mt-1 rounded bg-white px-2 py-1 text-sky-900">
+                            Project guidance: {practiceNotes[technique.id].practiceNote}
+                          </p>
+                        )}
+
+                        {effectiveCanEditPractice && (
+                          <div className="mt-2 space-y-2">
+                            <textarea
+                              className="min-h-20 w-full rounded border border-sky-300 bg-white px-2 py-1 text-[11px]"
+                              onChange={(event) => setPracticeNoteDraft(event.target.value)}
+                              placeholder="Add practical interpretation for this project..."
+                              value={practiceNoteDraft}
+                            />
+                            <button
+                              className="rounded border border-sky-700 bg-sky-700 px-2 py-1 text-[11px] font-medium text-white disabled:opacity-50"
+                              disabled={isSavingPracticeNote}
+                              onClick={() => void savePracticeNote()}
+                              type="button"
+                            >
+                              {isSavingPracticeNote ? "Saving..." : "Save guidance"}
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
           ))}
-        </ul>
+        </div>
 
         {taxonomyError && <p className="mt-2 text-xs text-red-700">{taxonomyError}</p>}
       </div>
