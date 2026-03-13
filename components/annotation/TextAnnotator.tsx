@@ -10,6 +10,7 @@ type Props = {
   annotations: Annotation[];
   onAnnotate: (techId: string, text: string, start: number, end: number) => void;
   onRemove: (id: string) => void;
+  currentUserId?: string | null;
 };
 
 function escapeHtml(input: string): string {
@@ -21,7 +22,7 @@ function escapeHtml(input: string): string {
     .replaceAll("'", "&#39;");
 }
 
-export default function TextAnnotator({ content, annotations, onRemove }: Props) {
+export default function TextAnnotator({ content, annotations, onRemove, currentUserId }: Props) {
   const { hoveredAnnotationId, setHoveredAnnotationId } = useAnnotationStore();
 
   const html = useMemo(() => {
@@ -34,9 +35,13 @@ export default function TextAnnotator({ content, annotations, onRemove }: Props)
 
       const levelClass = `level-${tech.level} ann-mark${hoveredAnnotationId === annotation.id ? " ann-hovered" : ""}`;
       const quoted = escapeHtml(annotation.quoted_text);
+      const canRemove = Boolean(currentUserId && annotation.coder_id === currentUserId);
+      const tagText = canRemove ? `${annotation.tech_id} x` : annotation.tech_id;
+      const removeAttr = canRemove ? ` data-remove-id="${annotation.id}"` : "";
+
       rendered = rendered.replace(
         quoted,
-        `<mark class="${levelClass}" data-id="${annotation.id}" title="${escapeHtml(`${tech.name}: ${tech.plainName}`)}">${quoted}<button type="button" class="ann-tag" data-remove-id="${annotation.id}">${annotation.tech_id} x</button></mark>`,
+        `<mark class="${levelClass}" data-id="${annotation.id}" title="${escapeHtml(`${tech.name}: ${tech.plainName}`)}">${quoted}<button type="button" class="ann-tag"${removeAttr}>${tagText}</button></mark>`,
       );
     });
 

@@ -7,10 +7,11 @@ type Props = {
   position: { x: number; y: number } | null;
   selectedText: string;
   onSelect: (techId: string) => void;
+  onComment: () => void;
   onDismiss: () => void;
 };
 
-export default function SelectionPopup({ position, selectedText, onSelect, onDismiss }: Props) {
+export default function SelectionPopup({ position, selectedText, onSelect, onComment, onDismiss }: Props) {
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -34,6 +35,13 @@ export default function SelectionPopup({ position, selectedText, onSelect, onDis
     >
       <p className="mb-1 text-xs font-medium text-gray-500">Assign technique to selection</p>
       <p className="mb-2 line-clamp-2 text-xs text-gray-700">&quot;{selectedText}&quot;</p>
+      <button
+        className="mb-2 w-full rounded border border-sky-600 px-2 py-1 text-xs font-medium text-sky-700 hover:bg-sky-50"
+        onClick={onComment}
+        type="button"
+      >
+        Add Comment
+      </button>
       <div className="flex flex-wrap gap-1">
         {TAXONOMY.map((technique) => (
           <button

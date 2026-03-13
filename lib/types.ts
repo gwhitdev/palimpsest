@@ -48,6 +48,26 @@ export interface Annotation {
   created_at: string;
 }
 
+export interface AnnotatorUser {
+  id: string;
+  display_name: string;
+  role?: "owner" | "coder";
+}
+
+export interface DocumentComment {
+  id: string;
+  project_id?: string;
+  document_id: string;
+  parent_id: string | null;
+  author_id: string;
+  author_name: string;
+  body: string;
+  quoted_text: string | null;
+  start_offset: number | null;
+  end_offset: number | null;
+  created_at: string;
+}
+
 export interface AISuggestion {
   techId: string;
   text: string;
