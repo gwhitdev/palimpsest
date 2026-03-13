@@ -207,13 +207,22 @@ export default function ProjectsMenu() {
         <div className="absolute right-0 z-50 mt-2 w-[360px] rounded-lg border border-gray-200 bg-white p-3 shadow-xl">
           <div className="flex items-center justify-between gap-2">
             <p className="text-sm font-semibold">Projects</p>
-            <Link
-              className="text-xs font-medium text-gray-600 underline"
-              href="/project-management"
-              onClick={() => setIsOpen(false)}
-            >
-              Open Project Management
-            </Link>
+            <div className="flex items-center gap-2">
+              <Link
+                className="text-xs font-medium text-gray-600 underline"
+                href="/research-checklist"
+                onClick={() => setIsOpen(false)}
+              >
+                Open Checklist
+              </Link>
+              <Link
+                className="text-xs font-medium text-gray-600 underline"
+                href="/project-management"
+                onClick={() => setIsOpen(false)}
+              >
+                Open Project Management
+              </Link>
+            </div>
           </div>
 
           <p className="mt-1 text-xs text-gray-600">{currentProjectLabel}</p>

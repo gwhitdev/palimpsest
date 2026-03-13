@@ -7,6 +7,7 @@ import {
   TAXONOMY_LEVEL_DESCRIPTIONS,
   TAXONOMY_LEVEL_LABELS,
 } from "@/lib/taxonomyLevels";
+import TechniqueStatusBadge from "@/components/ui/TechniqueStatusBadge";
 import { parseResponseJson } from "@/lib/http";
 import { useAnnotationStore } from "@/store/annotationStore";
 
@@ -31,6 +32,34 @@ type PracticeNotePatchResponse = {
   error?: string;
 };
 
+type KappaTechnique = {
+  techId: string;
+  kappa: number;
+  status: "DRAFT" | "UNDER REVISION" | "LOCKED";
+  note?: string;
+};
+
+type KappaResponse = {
+  byTechnique?: KappaTechnique[];
+  setupRequired?: boolean;
+  setupHint?: string;
+  error?: string;
+};
+
+type BoundaryExample = {
+  id: string;
+  tech_id: string;
+  quoted_text: string;
+  explanation: string | null;
+};
+
+type BoundaryExamplesResponse = {
+  examples?: BoundaryExample[];
+  setupRequired?: boolean;
+  setupHint?: string;
+  error?: string;
+};
+
 const TAXONOMY_LEVEL_ROW_CLASSES = {
   1: "border-teal-200 bg-teal-50/70",
   2: "border-amber-200 bg-amber-50/70",
@@ -48,6 +77,8 @@ export default function TechniquePanel({
   const [taxonomyError, setTaxonomyError] = useState<string | null>(null);
   const [activeTechniqueId, setActiveTechniqueId] = useState<string | null>(null);
   const [practiceNotes, setPracticeNotes] = useState<Record<string, { practiceNote: string; updatedAt: string | null }>>({});
+  const [kappaByTechnique, setKappaByTechnique] = useState<Record<string, KappaTechnique>>({});
+  const [boundaryExamplesByTechnique, setBoundaryExamplesByTechnique] = useState<Record<string, BoundaryExample[]>>({});
   const [practiceNoteDraft, setPracticeNoteDraft] = useState("");
   const [isSavingPracticeNote, setIsSavingPracticeNote] = useState(false);
   const [effectiveCanEditPractice, setEffectiveCanEditPractice] = useState(canEditTaxonomyPractice);
@@ -61,25 +92,62 @@ export default function TechniquePanel({
   useEffect(() => {
     if (!projectId) {
       setPracticeNotes({});
+      setKappaByTechnique({});
+      setBoundaryExamplesByTechnique({});
       return;
     }
 
     (async () => {
       try {
-        const response = await fetch(`/api/taxonomy-practice?projectId=${projectId}`);
-        const payload = await parseResponseJson<PracticeNotesResponse>(response, {});
+        const [practiceResponse, kappaResponse, boundaryResponse] = await Promise.all([
+          fetch(`/api/taxonomy-practice?projectId=${projectId}`),
+          fetch(`/api/kappa?projectId=${projectId}`),
+          fetch(`/api/boundary-examples?projectId=${projectId}`),
+        ]);
 
-        if (!response.ok) {
-          throw new Error(payload.error ?? "Unable to load taxonomy practice notes.");
+        const practicePayload = await parseResponseJson<PracticeNotesResponse>(practiceResponse, {});
+        const kappaPayload = await parseResponseJson<KappaResponse>(kappaResponse, {});
+        const boundaryPayload = await parseResponseJson<BoundaryExamplesResponse>(boundaryResponse, {});
+
+        if (!practiceResponse.ok) {
+          throw new Error(practicePayload.error ?? "Unable to load taxonomy practice notes.");
         }
 
-        setPracticeNotes(payload.notes ?? {});
-        if (typeof payload.canEdit === "boolean") {
-          setEffectiveCanEditPractice(payload.canEdit);
+        setPracticeNotes(practicePayload.notes ?? {});
+        if (typeof practicePayload.canEdit === "boolean") {
+          setEffectiveCanEditPractice(practicePayload.canEdit);
         }
 
-        if (payload.setupRequired && payload.setupHint) {
-          setTaxonomyError(payload.setupHint);
+        if (practicePayload.setupRequired && practicePayload.setupHint) {
+          setTaxonomyError(practicePayload.setupHint);
+        }
+
+        if (!kappaResponse.ok) {
+          if (!kappaPayload.setupRequired) {
+            throw new Error(kappaPayload.error ?? "Unable to load kappa summary.");
+          }
+        } else {
+          const nextKappaMap: Record<string, KappaTechnique> = {};
+          (kappaPayload.byTechnique ?? []).forEach((result) => {
+            nextKappaMap[result.techId] = result;
+          });
+          setKappaByTechnique(nextKappaMap);
+        }
+
+        if (!boundaryResponse.ok) {
+          if (!boundaryPayload.setupRequired) {
+            throw new Error(boundaryPayload.error ?? "Unable to load boundary examples.");
+          }
+        } else {
+          const grouped: Record<string, BoundaryExample[]> = {};
+          (boundaryPayload.examples ?? []).forEach((example) => {
+            if (!grouped[example.tech_id]) {
+              grouped[example.tech_id] = [];
+            }
+            grouped[example.tech_id].push(example);
+          });
+
+          setBoundaryExamplesByTechnique(grouped);
         }
       } catch (err) {
         setTaxonomyError(err instanceof Error ? err.message : "Unable to load taxonomy practice notes.");
@@ -177,6 +245,23 @@ export default function TechniquePanel({
     }
   };
 
+  const tooltipForTechnique = (techniqueId: string, defaultDefinition: string) => {
+    const boundaryExamples = boundaryExamplesByTechnique[techniqueId] ?? [];
+    const boundaryLines = boundaryExamples
+      .slice(0, 2)
+      .map((example) =>
+        example.explanation
+          ? `${example.quoted_text} (${example.explanation})`
+          : example.quoted_text,
+      );
+
+    if (boundaryLines.length === 0) {
+      return `Definition: ${defaultDefinition}`;
+    }
+
+    return `Definition: ${defaultDefinition}\nBoundary rules: ${boundaryLines.join(" | ")}`;
+  };
+
   return (
     <div className="h-full space-y-4 p-4">
       {canUseAISuggestions && (
@@ -223,13 +308,28 @@ export default function TechniquePanel({
                         setActiveTechniqueId((current) => (current === technique.id ? null : technique.id));
                         setTaxonomyError(null);
                       }}
+                      title={tooltipForTechnique(technique.id, technique.definition)}
                       type="button"
                     >
                       <p className="flex items-center gap-2 text-xs font-semibold">
                         <span className="font-mono text-[11px]">{technique.id}</span>
                         <span>{technique.name}</span>
+                        {kappaByTechnique[technique.id]?.status === "LOCKED" && (
+                          <span className="text-[10px] text-green-700">stable</span>
+                        )}
+                        {kappaByTechnique[technique.id]?.status === "UNDER REVISION" && (
+                          <span className="text-[10px] text-amber-700">revise</span>
+                        )}
                       </p>
                     </button>
+                    {kappaByTechnique[technique.id] && (
+                      <div className="mt-1">
+                        <TechniqueStatusBadge
+                          status={kappaByTechnique[technique.id].status}
+                          kappa={kappaByTechnique[technique.id].kappa}
+                        />
+                      </div>
+                    )}
                     <p className="text-xs text-gray-600">{technique.plainName}</p>
 
                     {activeTechniqueId === technique.id && activeTechnique && (
@@ -240,10 +340,28 @@ export default function TechniquePanel({
                         </p>
                         <p className="mt-1">{activeTechnique.userLabel}</p>
                         <p className="mt-1 text-sky-800">{activeTechnique.definition}</p>
+                        {kappaByTechnique[technique.id]?.note && (
+                          <p className="mt-1 rounded bg-white px-2 py-1 text-amber-800">
+                            Note: {kappaByTechnique[technique.id].note}
+                          </p>
+                        )}
                         {practiceNotes[technique.id]?.practiceNote && (
                           <p className="mt-1 rounded bg-white px-2 py-1 text-sky-900">
                             Project guidance: {practiceNotes[technique.id].practiceNote}
                           </p>
+                        )}
+                        {(boundaryExamplesByTechnique[technique.id] ?? []).length > 0 && (
+                          <div className="mt-1 rounded bg-white px-2 py-1 text-sky-900">
+                            <p className="font-semibold">Latest boundary examples</p>
+                            <ul className="mt-1 list-disc space-y-1 pl-4">
+                              {(boundaryExamplesByTechnique[technique.id] ?? []).slice(0, 2).map((example) => (
+                                <li key={example.id}>
+                                  "{example.quoted_text}"
+                                  {example.explanation ? ` - ${example.explanation}` : ""}
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
                         )}
 
                         {effectiveCanEditPractice && (

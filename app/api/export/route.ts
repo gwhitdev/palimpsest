@@ -12,12 +12,21 @@ type ExportRow = {
   quoted_text: string;
   coder_name: string;
   is_ai: boolean;
+  accepted: boolean;
+  round_id: string | null;
   created_at: string;
   documents?: {
     title?: string;
     source?: string;
   } | null;
+  round?: {
+    round_number?: number | null;
+  } | null;
 };
+
+function escapeCsv(value: string): string {
+  return `"${value.replace(/"/g, '""')}"`;
+}
 
 export async function GET(request: NextRequest) {
   const auth = await resolveProjectContext(extractProjectId(request), "export_data");
@@ -45,7 +54,7 @@ export async function GET(request: NextRequest) {
 
   const { data, error } = await supabase
     .from("annotations")
-    .select("*, documents(title, source)")
+    .select("tech_id, quoted_text, coder_name, is_ai, accepted, round_id, created_at, documents(title, source), round:coding_rounds(round_number)")
     .eq("project_id", projectId)
     .order("created_at", { ascending: true });
 
@@ -53,16 +62,22 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  const header = "Document,Source,TechniqueID,QuotedText,CoderName,IsAI,CreatedAt";
+  const header =
+    "Document,Source,TechniqueID,QuotedText,CoderName,IsAI,Accepted,CreatedAt,round_id,round_number,is_ai,accepted";
   const rows = ((data ?? []) as ExportRow[]).map((annotation) =>
     [
-      `"${annotation.documents?.title ?? ""}"`,
-      `"${annotation.documents?.source ?? ""}"`,
-      `"${annotation.tech_id}"`,
-      `"${annotation.quoted_text.replace(/"/g, '""')}"`,
-      `"${annotation.coder_name}"`,
+      escapeCsv(annotation.documents?.title ?? ""),
+      escapeCsv(annotation.documents?.source ?? ""),
+      escapeCsv(annotation.tech_id),
+      escapeCsv(annotation.quoted_text ?? ""),
+      escapeCsv(annotation.coder_name ?? ""),
       annotation.is_ai ? "TRUE" : "FALSE",
-      `"${annotation.created_at}"`,
+      annotation.accepted ? "TRUE" : "FALSE",
+      escapeCsv(annotation.created_at ?? ""),
+      escapeCsv(annotation.round_id ?? ""),
+      annotation.round?.round_number?.toString() ?? "",
+      annotation.is_ai ? "TRUE" : "FALSE",
+      annotation.accepted ? "TRUE" : "FALSE",
     ].join(","),
   );
 

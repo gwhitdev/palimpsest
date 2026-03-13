@@ -23,6 +23,9 @@ export default function AppLayout({ children }: { children: ReactNode }) {
           <p className="text-sm font-semibold">Palimpsest</p>
           <div className="flex items-center gap-4 text-sm">
             <ProjectsMenu />
+            <Link className="text-gray-700 hover:text-black" href="/research-checklist">
+              Research Checklist
+            </Link>
             <Link className="text-gray-700 hover:text-black" href="/account">
               Account
             </Link>
