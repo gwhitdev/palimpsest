@@ -1,6 +1,22 @@
--- Fix accept_project_invite ambiguity by using non-conflicting OUT names.
--- This script force-recreates the function for environments where CREATE OR REPLACE
--- may reject return-signature changes.
+-- Diagnose target database and recreate invite-accept function safely.
+-- Run this in the SAME Supabase project your app is using.
+
+-- 1) Sanity checks: fail fast if this is the wrong database.
+do $$
+begin
+  if to_regclass('public.project_invites') is null then
+    raise exception 'Missing public.project_invites. You are likely connected to the wrong database/project.';
+  end if;
+
+  if to_regclass('public.project_memberships') is null then
+    raise exception 'Missing public.project_memberships. You are likely connected to the wrong database/project.';
+  end if;
+
+  if to_regclass('public.project_member_permissions') is null then
+    raise exception 'Missing public.project_member_permissions. You are likely connected to the wrong database/project.';
+  end if;
+end
+$$;
 
 begin;
 
@@ -50,7 +66,7 @@ begin
 
   insert into public.project_memberships (project_id, user_id, role, status, invited_by)
   values (invite_record.project_id, current_user_id, invite_record.role, 'active', invite_record.invited_by)
-  on conflict on constraint project_memberships_pkey
+  on conflict (project_id, user_id)
   do update
     set role = excluded.role,
         status = 'active',
@@ -64,7 +80,7 @@ begin
     if permission_name is not null and permission_name <> '' then
       insert into public.project_member_permissions (project_id, user_id, permission, effect, created_by)
       values (invite_record.project_id, current_user_id, permission_name, 'allow', invite_record.invited_by)
-      on conflict on constraint project_member_permissions_pkey
+      on conflict (project_id, user_id, permission)
       do update set effect = excluded.effect, created_by = excluded.created_by;
     end if;
   end loop;
@@ -73,7 +89,7 @@ begin
     if permission_name is not null and permission_name <> '' then
       insert into public.project_member_permissions (project_id, user_id, permission, effect, created_by)
       values (invite_record.project_id, current_user_id, permission_name, 'deny', invite_record.invited_by)
-      on conflict on constraint project_member_permissions_pkey
+      on conflict (project_id, user_id, permission)
       do update set effect = excluded.effect, created_by = excluded.created_by;
     end if;
   end loop;
@@ -95,3 +111,33 @@ grant execute on function public.accept_project_invite(uuid) to authenticated;
 notify pgrst, 'reload schema';
 
 commit;
+
+-- 2) Hard assertion: fail if function was not recreated with the safe output names.
+do $$
+declare
+  actual_signature text;
+begin
+  select pg_get_function_result(p.oid)
+  into actual_signature
+  from pg_proc p
+  join pg_namespace n
+    on n.oid = p.pronamespace
+  where n.nspname = 'public'
+    and p.proname = 'accept_project_invite'
+    and pg_get_function_identity_arguments(p.oid) = 'invite_token uuid';
+
+  if actual_signature is distinct from 'TABLE(invited_project_id uuid, invited_role text)' then
+    raise exception 'accept_project_invite has unexpected result signature: %', coalesce(actual_signature, '<missing>');
+  end if;
+end
+$$;
+
+-- 3) Verification output.
+select
+  p.oid::regprocedure as function_signature,
+  pg_get_function_result(p.oid) as result_signature
+from pg_proc p
+join pg_namespace n
+  on n.oid = p.pronamespace
+where n.nspname = 'public'
+  and p.proname = 'accept_project_invite';
